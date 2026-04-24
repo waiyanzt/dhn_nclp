@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.cache/
+.coverage
+htmlcov/
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Data (kept empty in git; populate locally)
+data/*
+!data/.gitkeep
+
+# TensorBoard runs
+runs/*
+!runs/.gitkeep
+
+# Notebook checkpoints
+.ipynb_checkpoints/
