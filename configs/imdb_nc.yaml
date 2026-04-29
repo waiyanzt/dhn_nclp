@@ -1,0 +1,38 @@
+seed: 42
+device: "cuda:0"
+
+logging:
+  path: ./runs/
+  experiment: imdb_nc_p1c2p3_flat
+
+data:
+  path: ./data/preprocessed/IMDB_dhn_nc.pt
+
+model:
+  # one DHN layer with three pattern kernels (P1, P2=c2, P3 = 3-node path)
+  # indim=-1 → resolved to feat_dim at runtime; outdims of 64 each → 192-dim concat
+  layers_config:
+    - p1: [-1, 64, 1]
+      c2: [-1, 64, 2]
+      p3: [-1, 64, 3]
+  agg: null   # node classification: per-node logits, no graph-level pooling
+  activation:
+    name: ReLU
+    kwargs:
+      inplace: false
+
+training:
+  epochs: 200
+  loss:
+    name: CrossEntropyLoss
+    kwargs:
+      reduction: mean
+  optimizer:
+    name: AdamW
+    kwargs:
+      lr: 0.005
+      weight_decay: 0.001
+      betas: [0.9, 0.999]
+  lr_scheduling:
+    name: null
+    kwargs: {}

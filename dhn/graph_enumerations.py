@@ -5,6 +5,31 @@ from itertools import permutations
 from collections import defaultdict
 
 
+def single_node_mapping_index(nxg):
+    """P1 pattern: each node is its own root. Mapping is the identity (N, 1)."""
+    n = nxg.number_of_nodes()
+    if n == 0:
+        return {'p1': None}
+    return {'p1': torch.arange(n, dtype=torch.long).unsqueeze(1)}
+
+
+def path_mapping_index(nxg):
+    """P3 pattern: 3-node path rooted at one endpoint.
+
+    Each row is [root, middle, end] for an ordered length-2 walk. Counts
+    homomorphisms (not subgraph isomorphisms), so closed walks where root == end
+    are included.
+    """
+    paths = []
+    for u in nxg.nodes():
+        for v in nxg.neighbors(u):
+            for w in nxg.neighbors(v):
+                paths.append([u, v, w])
+    if not paths:
+        return {'p3': None}
+    return {'p3': torch.tensor(paths, dtype=torch.long)}
+
+
 def cycle_mapping_index(nxg, length_bound=10):
     base_cycles = [*nx.simple_cycles(nxg, length_bound=length_bound)]
     index_dict = defaultdict(list)
@@ -14,6 +39,9 @@ def cycle_mapping_index(nxg, length_bound=10):
     index_dict['c2'] = list(nxg.edges())
     result = dict()
     for k, v in index_dict.items():
+        if not v:
+            result[k] = None
+            continue
         result[k] = torch.tensor(np.vstack([np.roll(v, i, axis=1) for i in range(1, int(k[1:])+1)])).long()
     for i in range(2, length_bound+1):
         if f'c{i}' not in result:

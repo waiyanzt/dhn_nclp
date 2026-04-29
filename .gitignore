@@ -29,9 +29,7 @@ htmlcov/
 *.swp
 .DS_Store
 
-# Data (kept empty in git; populate locally)
-data/*
-!data/.gitkeep
+
 
 # TensorBoard runs
 runs/*
