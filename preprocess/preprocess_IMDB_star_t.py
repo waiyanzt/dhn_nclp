@@ -216,27 +216,36 @@ for movie_idx, row in movies.iterrows():
 # X is a sparse matrix
 vectorizer = CountVectorizer(min_df=2)
 movie_X = vectorizer.fit_transform(movies['plot_keywords'].fillna('').apply(lambda x: str(x).replace("|", " ")).values)
-print(movies['plot_keywords'].fillna('').apply(lambda x: str(x).replace("|", " ")).values)
-print(movie_X)
-exit()
-# assign features to directors and actors as the means of their associated movies' features
-adjM_da2m = adjM[len(movies):(len(movies) + len(directors) + len(actors)), len(movies) + len(directors) + len(actors):]
-adjM_da2m_normalized = np.diag(1 / adjM_da2m.sum(axis=1)).dot(adjM_da2m)
-director_actor_X = scipy.sparse.csr_matrix(adjM_da2m_normalized).dot(movie_X)
-print(movie_X)
-adjM_da2m = adjM[len(movies) + len(directors) + len(actors):, len(movies):(len(movies) + len(directors) + len(actors))]
-adjM_da2m_normalized = np.diag(1 / adjM_da2m.sum(axis=1)).dot(adjM_da2m)
-imdb_link_X = scipy.sparse.csr_matrix(adjM_da2m_normalized).dot(director_actor_X)
-print(imdb_link_X.shape)
-ohe = OneHotEncoder(sparse_output=False).set_output(transform='pandas')
-le = LabelEncoder()
-imdb_link_X = le.fit_transform(movies['movie_imdb_link'].values)
-#imdb_link_X[:, 0] = pd.DataFrame(ohe.fit_transform(movies['movie_imdb_link'].values[[:, 0]]).toarray())
-#imdb_link_X = ohe.fit_transform(movies['movie_imdb_link'].values)
-print(imdb_link_X.shape)
+
+# Build a topology-independent feature adjacency (movie<->director, movie<->actor, movie<->imdb_link)
+# so feature semantics stay consistent across IMDb1/2/3/4 — only adjM and metapaths vary.
+feat_adj = np.zeros((dim, dim), dtype=int)
+for movie_idx, row in movies.iterrows():
+    if row['director_name'] in directors:
+        director_idx = directors.index(row['director_name'])
+        feat_adj[movie_idx, len(movies) + director_idx] = 1
+        feat_adj[len(movies) + director_idx, movie_idx] = 1
+    for actor_col in ('actor_1_name', 'actor_2_name', 'actor_3_name'):
+        if row[actor_col] in actors:
+            actor_idx = actors.index(row[actor_col])
+            feat_adj[movie_idx, len(movies) + len(directors) + actor_idx] = 1
+            feat_adj[len(movies) + len(directors) + actor_idx, movie_idx] = 1
+    if row['movie_imdb_link'] in imdb_links:
+        imdb_idx = imdb_links.index(row['movie_imdb_link'])
+        feat_adj[movie_idx, len(movies) + len(directors) + len(actors) + imdb_idx] = 1
+        feat_adj[len(movies) + len(directors) + len(actors) + imdb_idx, movie_idx] = 1
+
+# director/actor features = mean of their movies' features
+da_to_m = feat_adj[len(movies):(len(movies) + len(directors) + len(actors)), :len(movies)]
+da_to_m_normalized = np.diag(1 / da_to_m.sum(axis=1)).dot(da_to_m)
+director_actor_X = scipy.sparse.csr_matrix(da_to_m_normalized).dot(movie_X)
+
+# imdb_link features = mean of their movies' features (1:1 after dedup, but treat uniformly)
+im_to_m = feat_adj[len(movies) + len(directors) + len(actors):, :len(movies)]
+im_to_m_normalized = np.diag(1 / im_to_m.sum(axis=1)).dot(im_to_m)
+imdb_link_X = scipy.sparse.csr_matrix(im_to_m_normalized).dot(movie_X)
+
 full_X = scipy.sparse.vstack([movie_X, director_actor_X, imdb_link_X])
-print(full_X[np.where(type_mask == 3)[0]])
-exit()
 expected_metapaths = [
     [(0, 3, 1, 3, 0), (0, 3, 2, 3, 0), (0, 3, 0)],
     [(1, 3, 0, 3, 1), (1, 3, 2, 3, 1), (1, 3, 1)],
@@ -284,7 +293,6 @@ np.savez(save_prefix + 'train_val_test_idx.npz',
          train_idx=train_idx,
          test_idx=test_idx)
 print(f"train {len(train_idx)} test {len(test_idx)} val {len(val_idx)}")
-exit()
 """
 author_label = pd.read_csv('data/raw/DBLP/author_label.txt', sep='\t', header=None, names=['author_id', 'label', 'author_name'], keep_default_na=False, encoding='utf-8')
 paper_area = pd.read_csv('data/raw/DBLP/paper_label.txt', sep='\t', header=None, names=['paper_id', 'area_id', 'paper_name'], keep_default_na=False, encoding='utf-8')
