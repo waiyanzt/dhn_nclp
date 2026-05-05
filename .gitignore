@@ -36,3 +36,4 @@ runs/default
 
 # Notebook checkpoints
 .ipynb_checkpoints/
+data/preprocessed/*.pt
