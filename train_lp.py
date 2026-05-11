@@ -118,14 +118,6 @@ def pairwise_logsigmoid_loss(scores_pos, scores_neg):
     return -F.logsigmoid(diffs).mean()
 
 
-def val_bce(scores_pos, scores_neg):
-    """1+K-way BCE for early stopping."""
-    all_scores = torch.cat([scores_pos.unsqueeze(1), scores_neg], dim=1)
-    all_labels = torch.zeros_like(all_scores)
-    all_labels[:, 0] = 1
-    return F.binary_cross_entropy_with_logits(all_scores, all_labels).item()
-
-
 def compute_metrics(scores_pos, scores_neg, hits_k=(1, 3, 5), threshold=0.5):
     sp = scores_pos.detach().cpu().numpy()
     sn = scores_neg.detach().cpu().numpy()
@@ -211,7 +203,7 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     epochs = config["training"]["epochs"]
     patience = config["training"]["patience"]
 
-    best_val_bce = float("inf")
+    best_val_loss = float("inf")
     best_state = None
     bad_epochs = 0
     best_epoch = 0
@@ -237,10 +229,10 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
         optimizer.step()
 
         val_sp, val_sn = evaluate_split(model, data, val_pos, val_neg)
-        cur_val_bce = val_bce(val_sp, val_sn)
+        cur_val_loss = pairwise_logsigmoid_loss(val_sp, val_sn).item()
 
-        if cur_val_bce < best_val_bce:
-            best_val_bce = cur_val_bce
+        if cur_val_loss < best_val_loss:
+            best_val_loss = cur_val_loss
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
             bad_epochs = 0
             best_epoch = epoch
@@ -249,12 +241,12 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
 
         if verbose and (epoch == 1 or epoch % 10 == 0):
             print(f"    epoch {epoch:3d}: loss={loss.item():.4f} "
-                  f"val_bce={cur_val_bce:.4f} bad={bad_epochs}")
+                  f"val_loss={cur_val_loss:.4f} bad={bad_epochs}")
 
         if bad_epochs >= patience:
             if verbose:
                 print(f"  [seed={seed}] early stop at epoch {epoch} "
-                      f"(best val_bce={best_val_bce:.4f} at epoch {best_epoch})")
+                      f"(best val_loss={best_val_loss:.4f} at epoch {best_epoch})")
             break
 
     train_time_s = time.time() - start_time
@@ -270,7 +262,7 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     )
     metrics["seed"] = seed
     metrics["train_time_s"] = train_time_s
-    metrics["best_val_bce"] = best_val_bce
+    metrics["best_val_loss"] = best_val_loss
     metrics["best_epoch"] = best_epoch
 
     if verbose:
