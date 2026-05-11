@@ -1,0 +1,28 @@
+=== DHN-LP train | task=ml variant=v2 | seeds=[1566911444, 20241017, 20251017] ===
+  [seed=1566911444] trainable params: 829376
+    epoch   1: loss=0.6929 val_loss=0.6971 bad=0
+    epoch  10: loss=0.4580 val_loss=2.1442 bad=9
+  [seed=1566911444] early stop at epoch 16 (best val_loss=0.6971 at epoch 1)
+  [seed=1566911444] TEST  AUC=0.4207 AP=0.0405 MRR=0.1224 H@1=0.0156 H@3=0.0766 H@5=0.1256
+  [seed=20241017] trainable params: 829376
+    epoch   1: loss=0.6933 val_loss=0.6955 bad=0
+    epoch  10: loss=0.4683 val_loss=1.8817 bad=9
+  [seed=20241017] early stop at epoch 16 (best val_loss=0.6955 at epoch 1)
+  [seed=20241017] TEST  AUC=0.4283 AP=0.0411 MRR=0.1340 H@1=0.0287 H@3=0.0837 H@5=0.1495
+  [seed=20251017] trainable params: 829376
+    epoch   1: loss=0.6933 val_loss=0.6957 bad=0
+    epoch  10: loss=0.4472 val_loss=1.5227 bad=9
+  [seed=20251017] early stop at epoch 16 (best val_loss=0.6957 at epoch 1)
+  [seed=20251017] TEST  AUC=0.4360 AP=0.0427 MRR=0.1408 H@1=0.0311 H@3=0.0897 H@5=0.1675
+
+=== Summary | task=ml variant=v2 (n=3 seeds) ===
+  auc        0.4283 ± 0.0062
+  ap         0.0414 ± 0.0009
+  mrr        0.1324 ± 0.0076
+  hits@1     0.0251 ± 0.0068
+  hits@3     0.0833 ± 0.0054
+  hits@5     0.1475 ± 0.0171
+  f1         0.0952 ± 0.0000
+  accuracy   0.0500 ± 0.0000
+
+Wrote data/results/lp_summary_ml_v2.csv
