@@ -4,9 +4,22 @@ Mirrors Bishwash's RGCN-LP preprocessor (KC_scripts/MAGNN/preprocess_IMDB_rgcn_l
 to guarantee graph-content parity with the RGCN baseline, then flattens the
 heterograph to a single homogeneous PyG Data with DHN pattern enumerations.
 
-The graph contains TRAIN positive target edges only; val/test target edges are
-never added (leakage prevention by construction). `x` is None: the trainer
-creates nn.Embedding(num_nodes, in_dim) for headline RGCN parity.
+Target-edge handling (leakage prevention by construction):
+  - md / mg / ml: only TRAIN positive target edges are added to the graph;
+    val/test target edges are never added.
+
+Auxiliary genre nodes (added to the graph for ALL tasks):
+  - Three genre nodes (Action/Comedy/Drama) are appended to the global node
+    space and connected to every movie via movie-genre edges derived from
+    movie_metadata.csv. For mg, genre is the LP target, so only TRAIN
+    movie-genre edges are added (val/test are the held-out positives). For
+    md and ml, genre is auxiliary structural context — every movie carries
+    its genre edge regardless of split (no leakage since genre is not the
+    target). Bishwash's RGCN runner has the movie-genre relation wired up
+    for every task; including these edges matches that intent.
+
+`x` is None: the trainer creates nn.Embedding(num_nodes, in_dim) for headline
+RGCN parity.
 
 Usage:
     python preprocess/preprocess_IMDB_dhn_lp.py --task md --variant v1
@@ -53,7 +66,11 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def read_imdb_frame_md_mg(csv_path: str) -> pd.DataFrame:
+def read_imdb_frame_md_mg(csv_path: str) -> tuple[pd.DataFrame, np.ndarray]:
+    """Return (movies, labels). Labels are genre ids 0/1/2 (Action/Comedy/Drama),
+    matching Bishwash's CMPNN convention. Used as the LP target for mg and as
+    the source of auxiliary movie-genre edges for md.
+    """
     movies = (
         pd.read_csv(csv_path, encoding="utf-8")
         .drop_duplicates(subset=["movie_imdb_link"])
@@ -72,10 +89,15 @@ def read_imdb_frame_md_mg(csv_path: str) -> pd.DataFrame:
             elif g == "Drama":
                 labels[idx] = 2
                 break
-    return movies[labels != -1].reset_index(drop=True)
+    keep = labels != -1
+    return movies[keep].reset_index(drop=True), labels[keep]
 
 
-def read_imdb_frame_ml(csv_path: str) -> pd.DataFrame:
+def read_imdb_frame_ml(csv_path: str) -> tuple[pd.DataFrame, np.ndarray]:
+    """Return (movies, labels). Labels are genre ids 0/1/2. Used as the source
+    of auxiliary movie-genre edges for ml (genre is not the ml target, so
+    every movie carries its genre edge without leakage).
+    """
     movies = pd.read_csv(csv_path, encoding="utf-8")
     movies = movies.drop_duplicates(subset="movie_imdb_link").dropna(
         subset=["movie_imdb_link", "actor_1_name", "director_name", "genres"]
@@ -94,7 +116,7 @@ def read_imdb_frame_ml(csv_path: str) -> pd.DataFrame:
                 labels[i] = 2
                 break
     keep = np.where(labels >= 0)[0]
-    return movies.iloc[keep].reset_index(drop=True)
+    return movies.iloc[keep].reset_index(drop=True), labels[keep]
 
 
 def _directors_actors_mg(movies: pd.DataFrame) -> tuple[list, list]:
@@ -159,7 +181,7 @@ def _add(d: dict, key: str, u: int, v: int) -> None:
     d[key][1].append(int(v))
 
 
-def build_typed_edges_md(movies, variant, train_pos, dmap, amap):
+def build_typed_edges_md(movies, variant, train_pos, dmap, amap, labels):
     raw: dict = {}
     train_md = {(int(r[0]), int(r[1])) for r in train_pos}
 
@@ -183,6 +205,10 @@ def build_typed_edges_md(movies, variant, train_pos, dmap, amap):
             _add(raw, "movie-director", m, d)
     else:
         raise ValueError(f"md variant must be v1 or v3, got {variant}")
+
+    # Auxiliary movie-genre edges from labels.npy (genre is not the md target).
+    for mi in range(len(movies)):
+        _add(raw, "movie-genre", mi, int(labels[mi]))
     return raw
 
 
@@ -235,7 +261,7 @@ def build_typed_edges_mg(movies, variant, train_pos, dmap, amap):
     return raw
 
 
-def build_typed_edges_ml(movies, variant, train_pos, dmap, amap):
+def build_typed_edges_ml(movies, variant, train_pos, dmap, amap, labels):
     raw: dict = {}
     train_ml = {(int(r[0]), int(r[1])) for r in train_pos}
 
@@ -273,6 +299,10 @@ def build_typed_edges_ml(movies, variant, train_pos, dmap, amap):
             _add(raw, "movie-link", m, l)
     else:
         raise ValueError(f"ml variant must be v1-v4, got {variant}")
+
+    # Auxiliary movie-genre edges from labels.npy (genre is not the ml target).
+    for mi in range(len(movies)):
+        _add(raw, "movie-genre", mi, int(labels[mi]))
     return raw
 
 
@@ -314,16 +344,16 @@ def preprocess_one(csv_path: Path, shared_npz: Path, task: str, variant: str,
     test_pos = z["test_pos"].astype(np.int64)
 
     if task == "ml":
-        movies = read_imdb_frame_ml(str(csv_path))
+        movies, labels = read_imdb_frame_ml(str(csv_path))
         directors, actors = _directors_actors_ml(movies)
     else:
-        movies = read_imdb_frame_md_mg(str(csv_path))
+        movies, labels = read_imdb_frame_md_mg(str(csv_path))
         directors, actors = _directors_actors_mg(movies)
 
     M = len(movies)
     Dn = len(directors)
     An = len(actors)
-    Gn = NUM_GENRES if task == "mg" else 0
+    Gn = NUM_GENRES
     dmap = {n: i for i, n in enumerate(directors)}
     amap = {n: i for i, n in enumerate(actors)}
 
@@ -332,23 +362,31 @@ def preprocess_one(csv_path: Path, shared_npz: Path, task: str, variant: str,
         m_max = int(arr[:, 0].max()) if len(arr) else -1
         assert m_max < M, f"{split_name}: movie_local={m_max} out of range (M={M})"
 
-    # 2. Global id offsets: movies -> directors -> actors -> links -> [genres]
-    offsets = {"movie": 0, "director": M, "actor": M + Dn, "link": M + Dn + An}
-    if task == "mg":
-        offsets["genre"] = M + Dn + An + M
+    # 2. Global id offsets: movies -> directors -> actors -> links -> genres
+    # Genre nodes are present for all tasks; they are the LP target for mg and
+    # auxiliary structural context for md/ml.
+    offsets = {
+        "movie": 0,
+        "director": M,
+        "actor": M + Dn,
+        "link": M + Dn + An,
+        "genre": M + Dn + An + M,
+    }
     num_nodes_total = M + Dn + An + M + Gn
 
     print(f"  Counts: movies={M}, directors={Dn}, actors={An}, links={M}, genres={Gn}")
     print(f"  Total nodes: {num_nodes_total}")
     print(f"  Splits: train={len(train_pos)}, val={len(val_pos)}, test={len(test_pos)}")
 
-    # 3. Build typed edges (train target edges only; val/test never added)
+    # 3. Build typed edges. Target edges (the LP positives) come from train_pos
+    # only — val/test target edges are never added. Auxiliary movie-genre edges
+    # come from labels (every movie carries its genre) for md and ml.
     if task == "md":
-        typed_edges = build_typed_edges_md(movies, variant, train_pos, dmap, amap)
+        typed_edges = build_typed_edges_md(movies, variant, train_pos, dmap, amap, labels)
     elif task == "mg":
         typed_edges = build_typed_edges_mg(movies, variant, train_pos, dmap, amap)
     else:
-        typed_edges = build_typed_edges_ml(movies, variant, train_pos, dmap, amap)
+        typed_edges = build_typed_edges_ml(movies, variant, train_pos, dmap, amap, labels)
 
     print("  Typed edge counts:")
     for k, (u, _) in typed_edges.items():
@@ -444,9 +482,7 @@ def preprocess_one(csv_path: Path, shared_npz: Path, task: str, variant: str,
     data.batch = torch.zeros(num_nodes_total, dtype=torch.long)
     data.batch_size = 1
 
-    num_nodes_per_type = {"movie": M, "director": Dn, "actor": An, "link": M}
-    if task == "mg":
-        num_nodes_per_type["genre"] = Gn
+    num_nodes_per_type = {"movie": M, "director": Dn, "actor": An, "link": M, "genre": Gn}
 
     bundle = {
         "data": data,
