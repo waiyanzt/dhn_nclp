@@ -1,0 +1,35 @@
+device: "cuda:0"
+
+# Seeds match the lab's LP eval contract (same as IMDb / Bishwash's DBLP runner)
+seeds: [1566911444, 20241017, 20251017]
+
+model:
+  # nn.Embedding(num_nodes, in_dim) since LP runs with no input features
+  in_dim: 64
+  # Vanilla DHN patterns (p1, c2, p3) - swap when prof's "our version" patterns arrive
+  layers_config:
+    - p1: [-1, 64, 1]
+      c2: [-1, 64, 2]
+      p3: [-1, 64, 3]
+  activation:
+    name: ReLU
+    kwargs:
+      inplace: false
+
+# Matches Bishwash's run_DBLP_pc.py: Adam, lr 0.005, wd 0.001, 100 epochs,
+# patience 5, val pairwise-loss early stopping.
+training:
+  epochs: 100
+  patience: 5
+  optimizer:
+    name: Adam
+    kwargs:
+      lr: 0.005
+      weight_decay: 0.001
+
+eval:
+  # <=3 negatives per paper at test -> <=4 candidates, so Hits@5 is dropped
+  hits_k: [1, 3]
+  threshold: 0.5
+  neg_mult: 3              # negatives sampled per positive each train epoch
+  test_neg_per_paper: 3    # subsample test negatives per paper (ranking + AUC)
