@@ -1,0 +1,371 @@
+"""Train DHN for FB15k-237 KG link prediction (multi-seed).
+
+Architectural differences from DBLP/IMDb:
+  - Decoder: DistMult (per-relation diagonal W_r).
+  - Evaluation: filtered MRR + Hits@{1,3,10} via full entity ranking
+    (both head and tail prediction; standard KG-LP protocol).
+  - Loss: BCE with corrupt-tail negative sampling.
+  - No input features: nn.Embedding(num_entities, in_dim) only.
+
+Usage:
+    python train_lp_fb15k.py --config configs/fb15k_lp.yaml \\
+        --bundle data/preprocessed/FB15k237_dhn_lp.pt \\
+        --out-dir data/results_fb15k
+"""
+import argparse
+import csv
+import os
+import time
+from collections import defaultdict
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import yaml
+
+from dhn.utils import get_act_module, get_optimizer
+from train_lp import DHN_LP, move_bundle_to, resolve_layers_config, set_seed, write_summary_csv
+
+
+# ---- Model ------------------------------------------------------------------
+
+class DHN_LP_FB15k(nn.Module):
+    """DHN encoder + DistMult KG decoder."""
+
+    def __init__(self, num_entities, num_relations, in_dim, layers_config,
+                 act_module, **act_kwargs):
+        super().__init__()
+        self.num_entities = num_entities
+        self.encoder = DHN_LP(
+            num_nodes=num_entities,
+            in_dim=in_dim,
+            layers_config=layers_config,
+            act_module=act_module,
+            **act_kwargs,
+        )
+        out_dim = sum(outdim for _, outdim, _ in layers_config[-1].values())
+        self.rel_emb = nn.Embedding(num_relations, out_dim)
+        nn.init.uniform_(self.rel_emb.weight, -0.5 / out_dim ** 0.5, 0.5 / out_dim ** 0.5)
+
+    def encode(self, data):
+        return self.encoder.encode(data)
+
+    def score(self, h_embs, r_ids, t_embs):
+        """DistMult: (h * w_r * t).sum(-1). Inputs may be (B, d)."""
+        w_r = self.rel_emb(r_ids)
+        return (h_embs * w_r * t_embs).sum(-1)
+
+    def score_all_tails(self, h_embs, r_ids, all_embs):
+        """Score all entities as tail: returns (B, N_entities)."""
+        w_r = self.rel_emb(r_ids)          # (B, d)
+        query = h_embs * w_r               # (B, d)
+        return query @ all_embs.T          # (B, N)
+
+    def score_all_heads(self, all_embs, r_ids, t_embs):
+        """Score all entities as head: returns (B, N_entities)."""
+        w_r = self.rel_emb(r_ids)          # (B, d)
+        query = t_embs * w_r               # (B, d)
+        return query @ all_embs.T          # (B, N)
+
+
+# ---- Training ---------------------------------------------------------------
+
+def train_epoch(model, data, train_triples, neg_per_pos, rng, device, optimizer):
+    model.train()
+    optimizer.zero_grad()
+    h = model.encode(data)
+
+    h_ids = train_triples[:, 0]
+    r_ids = train_triples[:, 1]
+    t_ids = train_triples[:, 2]
+
+    pos_scores = model.score(h[h_ids], r_ids, h[t_ids])
+
+    n = len(train_triples)
+    neg_t = torch.from_numpy(
+        rng.randint(0, model.num_entities, (n * neg_per_pos,)).astype(np.int64)
+    ).to(device)
+    h_rep = h_ids.repeat_interleave(neg_per_pos)
+    r_rep = r_ids.repeat_interleave(neg_per_pos)
+    neg_scores = model.score(h[h_rep], r_rep, h[neg_t])
+
+    loss = -(F.logsigmoid(pos_scores).mean() + F.logsigmoid(-neg_scores).mean())
+    loss.backward()
+    optimizer.step()
+    return loss.item()
+
+
+@torch.no_grad()
+def compute_val_loss(model, data, val_triples, neg_per_pos, rng, device):
+    model.eval()
+    h = model.encode(data)
+    h_ids = val_triples[:, 0]
+    r_ids = val_triples[:, 1]
+    t_ids = val_triples[:, 2]
+    pos_scores = model.score(h[h_ids], r_ids, h[t_ids])
+    n = len(val_triples)
+    neg_t = torch.from_numpy(
+        rng.randint(0, model.num_entities, (n * neg_per_pos,)).astype(np.int64)
+    ).to(device)
+    h_rep = h_ids.repeat_interleave(neg_per_pos)
+    r_rep = r_ids.repeat_interleave(neg_per_pos)
+    neg_scores = model.score(h[h_rep], r_rep, h[neg_t])
+    return -(F.logsigmoid(pos_scores).mean() + F.logsigmoid(-neg_scores).mean()).item()
+
+
+# ---- Evaluation -------------------------------------------------------------
+
+def build_filter_dicts(all_triples_np):
+    """(h,r)->set(known_t), (r,t)->set(known_h) from all splits."""
+    filter_tails = defaultdict(set)
+    filter_heads = defaultdict(set)
+    for h, r, t in all_triples_np:
+        filter_tails[(int(h), int(r))].add(int(t))
+        filter_heads[(int(r), int(t))].add(int(h))
+    return filter_tails, filter_heads
+
+
+def _ranks_from_scores(scores_np, true_ids_np):
+    """For each row, rank of true entity among all (higher score = better)."""
+    ranks = np.zeros(len(true_ids_np), dtype=np.int64)
+    for i, t in enumerate(true_ids_np):
+        ranks[i] = int((scores_np[i] > scores_np[i, t]).sum()) + 1
+    return ranks
+
+
+@torch.no_grad()
+def evaluate_filtered(model, data, test_triples, all_triples, hits_k, eval_batch_size,
+                       device, verbose=False):
+    model.eval()
+    h = model.encode(data)                   # (N, d)
+
+    filter_tails, filter_heads = build_filter_dicts(all_triples.cpu().numpy())
+
+    tail_rr, head_rr = [], []
+    tail_hits = {k: [] for k in hits_k}
+    head_hits = {k: [] for k in hits_k}
+
+    test_np = test_triples.cpu().numpy()
+    n_test = len(test_np)
+
+    for start in range(0, n_test, eval_batch_size):
+        batch_np = test_np[start:start + eval_batch_size]
+        B = len(batch_np)
+        h_ids = torch.from_numpy(batch_np[:, 0]).long().to(device)
+        r_ids = torch.from_numpy(batch_np[:, 1]).long().to(device)
+        t_ids = torch.from_numpy(batch_np[:, 2]).long().to(device)
+
+        # --- Tail prediction ---
+        scores_tail = model.score_all_tails(h[h_ids], r_ids, h).cpu().numpy()  # (B, N)
+        for i in range(B):
+            hi, ri, ti = int(batch_np[i, 0]), int(batch_np[i, 1]), int(batch_np[i, 2])
+            for k in filter_tails[(hi, ri)] - {ti}:
+                scores_tail[i, k] = -1e9
+        ranks_tail = _ranks_from_scores(scores_tail, batch_np[:, 2])
+        tail_rr.extend((1.0 / ranks_tail).tolist())
+        for k in hits_k:
+            tail_hits[k].extend((ranks_tail <= k).tolist())
+
+        # --- Head prediction ---
+        scores_head = model.score_all_heads(h, r_ids, h[t_ids]).cpu().numpy()  # (B, N)
+        for i in range(B):
+            hi, ri, ti = int(batch_np[i, 0]), int(batch_np[i, 1]), int(batch_np[i, 2])
+            for k in filter_heads[(ri, ti)] - {hi}:
+                scores_head[i, k] = -1e9
+        ranks_head = _ranks_from_scores(scores_head, batch_np[:, 0])
+        head_rr.extend((1.0 / ranks_head).tolist())
+        for k in hits_k:
+            head_hits[k].extend((ranks_head <= k).tolist())
+
+        if verbose and (start // eval_batch_size) % 20 == 0:
+            pct = 100 * min(start + eval_batch_size, n_test) / n_test
+            print(f"    eval {pct:5.1f}%", flush=True)
+
+    mrr_tail = float(np.mean(tail_rr))
+    mrr_head = float(np.mean(head_rr))
+    metrics = {
+        "mrr": (mrr_tail + mrr_head) / 2.0,
+        "mrr_tail": mrr_tail,
+        "mrr_head": mrr_head,
+    }
+    for k in hits_k:
+        ht = float(np.mean(tail_hits[k]))
+        hh = float(np.mean(head_hits[k]))
+        metrics[f"hits@{k}"] = (ht + hh) / 2.0
+        metrics[f"hits@{k}_tail"] = ht
+        metrics[f"hits@{k}_head"] = hh
+    return metrics
+
+
+# ---- Per-seed runner --------------------------------------------------------
+
+def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
+    set_seed(seed)
+    bundle = torch.load(bundle_path, weights_only=False, map_location="cpu")
+    meta = bundle["meta"]
+    splits = bundle["splits"]
+
+    if "cuda" in device and not torch.cuda.is_available():
+        print(f"  [warn] {device} requested but CUDA unavailable; falling back to cpu")
+        device = "cpu"
+
+    # Move graph data (not triples) to device
+    data = bundle["data"].to(device)
+    data.mapping_index_dict = {
+        k: (v.to(device) if torch.is_tensor(v) else v)
+        for k, v in data.mapping_index_dict.items()
+    }
+
+    train_triples = splits["train"].to(device)
+    val_triples = splits["val"].to(device)
+    test_triples = splits["test"]       # stays on CPU; eval moves batches
+    all_triples = splits["all_triples"] # stays on CPU for filter dict
+
+    in_dim = config["model"]["in_dim"]
+    layers_config = resolve_layers_config(config["model"]["layers_config"], in_dim)
+    act_kwargs = config["model"]["activation"].get("kwargs", {})
+
+    model = DHN_LP_FB15k(
+        num_entities=meta["num_entities"],
+        num_relations=meta["num_relations"],
+        in_dim=in_dim,
+        layers_config=layers_config,
+        act_module=get_act_module(config["model"]["activation"]["name"]),
+        **act_kwargs,
+    ).to(device)
+
+    opt_fn = get_optimizer(config["training"]["optimizer"]["name"])
+    optimizer = opt_fn(model.parameters(), **config["training"]["optimizer"].get("kwargs", {}))
+
+    epochs = config["training"]["epochs"]
+    patience = config["training"]["patience"]
+    neg_per_pos = config["training"].get("neg_per_pos", 10)
+    hits_k = tuple(config["eval"]["hits_k"])
+    eval_batch_size = config["eval"].get("eval_batch_size", 256)
+
+    rng = np.random.RandomState(seed)
+    best_val, best_state, bad, best_epoch = float("inf"), None, 0, 0
+    start_t = time.time()
+
+    for epoch in range(1, epochs + 1):
+        loss = train_epoch(model, data, train_triples, neg_per_pos, rng, device, optimizer)
+        v_loss = compute_val_loss(model, data, val_triples, neg_per_pos,
+                                  np.random.RandomState(epoch), device)
+
+        if v_loss < best_val:
+            best_val, bad, best_epoch = v_loss, 0, epoch
+            best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+        else:
+            bad += 1
+
+        if verbose and (epoch == 1 or epoch % 20 == 0):
+            print(f"    epoch {epoch:3d}: loss={loss:.4f} val_loss={v_loss:.4f} bad={bad}")
+        if bad >= patience:
+            if verbose:
+                print(f"  [seed={seed}] early stop @ epoch {epoch} (best @ {best_epoch})")
+            break
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    print(f"  [seed={seed}] Running test evaluation (filtered MRR)...", flush=True)
+    metrics = evaluate_filtered(
+        model, data, test_triples, all_triples, hits_k, eval_batch_size, device,
+        verbose=verbose,
+    )
+    train_time_s = time.time() - start_t
+    metrics.update(seed=seed, train_time_s=train_time_s, best_val_loss=best_val, best_epoch=best_epoch)
+
+    h1 = metrics.get("hits@1", float("nan"))
+    h10 = metrics.get("hits@10", float("nan"))
+    print(f"  [seed={seed}] TEST MRR={metrics['mrr']:.4f} MRR_tail={metrics['mrr_tail']:.4f} "
+          f"H@1={h1:.4f} H@10={h10:.4f}")
+    return metrics
+
+
+# ---- Summary CSV (KG-LP columns) --------------------------------------------
+
+def write_kg_summary_csv(path, per_seed, hits_k):
+    if not per_seed:
+        return
+    keys = (["seed", "mrr", "mrr_tail", "mrr_head"]
+            + [f"hits@{k}" for k in hits_k]
+            + [f"hits@{k}_tail" for k in hits_k]
+            + [f"hits@{k}_head" for k in hits_k]
+            + ["best_epoch", "best_val_loss", "train_time_s"])
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=keys + ["_type"])
+        w.writeheader()
+        for m in per_seed:
+            row = {k: m.get(k, "") for k in keys}
+            row["_type"] = "per_seed"
+            w.writerow(row)
+
+        def mean_std(k):
+            vals = [m.get(k, float("nan")) for m in per_seed
+                    if isinstance(m.get(k), (int, float))]
+            return (float(np.mean(vals)), float(np.std(vals, ddof=0))) if vals else (float("nan"), float("nan"))
+
+        mean_row = {"_type": "mean"}
+        std_row = {"_type": "std"}
+        for k in keys:
+            if k == "seed":
+                mean_row[k] = ""
+                std_row[k] = ""
+            else:
+                mu, sigma = mean_std(k)
+                mean_row[k] = f"{mu:.6f}"
+                std_row[k] = f"{sigma:.6f}"
+        w.writerow(mean_row)
+        w.writerow(std_row)
+
+    print(f"Wrote {path}")
+
+
+# ---- Main -------------------------------------------------------------------
+
+def main():
+    ap = argparse.ArgumentParser(description="Train DHN for FB15k-237 KG link prediction.")
+    ap.add_argument("--config", default="configs/fb15k_lp.yaml")
+    ap.add_argument("--bundle", default="data/preprocessed/FB15k237_dhn_lp.pt")
+    ap.add_argument("--out-dir", default="data/results_fb15k")
+    ap.add_argument("--seeds", default="")
+    ap.add_argument("--device", default="")
+    args = ap.parse_args()
+
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+
+    device = args.device or config.get("device", "cuda:0")
+    seeds = (
+        [int(s) for s in args.seeds.split(",") if s.strip()]
+        if args.seeds.strip()
+        else config.get("seeds", [1566911444, 20241017, 20251017])
+    )
+
+    bundle = torch.load(args.bundle, weights_only=False, map_location="cpu")
+    meta = bundle["meta"]
+    del bundle
+    print(f"=== DHN-LP FB15k-237 | entities={meta['num_entities']:,} "
+          f"relations={meta['num_relations']} | seeds={seeds} ===")
+
+    hits_k = tuple(config["eval"]["hits_k"])
+    per_seed = []
+    for seed in seeds:
+        per_seed.append(run_one_seed(config, args.bundle, seed, device, args.out_dir, verbose=True))
+
+    summary_path = os.path.join(args.out_dir, "lp_summary_fb15k.csv")
+    write_kg_summary_csv(summary_path, per_seed, hits_k)
+
+    # Print final mean±std
+    for key in ["mrr", "hits@1", "hits@10"]:
+        vals = [m[key] for m in per_seed if key in m]
+        if vals:
+            print(f"  {key}: {np.mean(vals):.4f} ± {np.std(vals, ddof=0):.4f}")
+
+
+if __name__ == "__main__":
+    main()
