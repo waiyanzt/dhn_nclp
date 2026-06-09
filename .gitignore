@@ -37,3 +37,6 @@ runs/default
 # Notebook checkpoints
 .ipynb_checkpoints/
 data/preprocessed/*.pt
+
+/data/raw/fb15k237_augmented_inverse/
+/data/raw/fb15k237_augmented_inverse.zip
