@@ -32,6 +32,15 @@ OUT_PATH = "data/preprocessed/FB15k237_dhn_lp.pt"
 SEED = 1566911444
 PATTERNS = ["p1", "c2"]
 
+
+def _parse_args():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--raw-dir", default=RAW_DIR,
+                    help="Path to the no_changes directory")
+    ap.add_argument("--out-path", default=OUT_PATH)
+    return ap.parse_args()
+
 PATTERN_FNS = {
     "p1": single_node_mapping_index,
     "c2": lambda g: cycle_mapping_index(g, length_bound=2),
@@ -107,13 +116,17 @@ def build_graph(train_triples, num_entities):
 
 
 def main():
-    print(f"Loading data from {RAW_DIR}...")
-    ent2id, rel2id = load_id_maps(RAW_DIR)
+    args = _parse_args()
+    raw_dir = args.raw_dir
+    out_path = args.out_path
+
+    print(f"Loading data from {raw_dir}...")
+    ent2id, rel2id = load_id_maps(raw_dir)
     num_entities = len(ent2id)
     num_relations = len(rel2id)
     print(f"  Entities: {num_entities:,}  Relations: {num_relations}")
 
-    triples = load_triples(RAW_DIR, ent2id, rel2id)
+    triples = load_triples(raw_dir, ent2id, rel2id)
     print(f"  Total triples: {len(triples):,}")
 
     print("Creating 80/10/10 stratified split...")
@@ -157,9 +170,9 @@ def main():
         },
     }
 
-    os.makedirs(os.path.dirname(OUT_PATH) or ".", exist_ok=True)
-    torch.save(bundle, OUT_PATH)
-    print(f"\nSaved -> {OUT_PATH}")
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    torch.save(bundle, out_path)
+    print(f"\nSaved -> {out_path}")
 
 
 if __name__ == "__main__":
