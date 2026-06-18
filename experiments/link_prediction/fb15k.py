@@ -8,7 +8,7 @@ Architectural differences from DBLP/IMDb:
   - No input features: nn.Embedding(num_entities, in_dim) only.
 
 Usage:
-    python train_lp_fb15k.py --config configs/fb15k_lp.yaml \\
+    python -m experiments.link_prediction.fb15k --config configs/fb15k_lp.yaml \\
         --bundle data/preprocessed/FB15k237_dhn_lp.pt \\
         --out-dir data/results_fb15k
 """
@@ -25,7 +25,13 @@ import torch.nn.functional as F
 import yaml
 
 from dhn.utils import get_act_module, get_optimizer
-from train_lp import DHN_LP, move_bundle_to, resolve_layers_config, set_seed, write_summary_csv
+from experiments.link_prediction.imdb import (
+    DHN_LP,
+    move_bundle_to,
+    resolve_layers_config,
+    set_seed,
+    write_summary_csv,
+)
 
 
 # ---- Model ------------------------------------------------------------------

@@ -5,7 +5,7 @@ Reads:  data/results/lp_summary_<task>_<variant>.csv
 Writes: data/results/summary.csv
 
 Run from repo root:
-    uv run python scripts/aggregate_lp_results.py
+    uv run python -m scripts.reports.aggregate_lp_results
 """
 from __future__ import annotations
 

@@ -1,17 +1,17 @@
 """Train DHN for DBLP paper-venue link prediction (multi-seed).
 
-Forked from train_lp.py because DBLP's eval contract differs from IMDb's:
+Forked from the IMDb LP runner because DBLP's eval contract differs from IMDb's:
   - negatives are a FLAT POOL (M, 2), not an (N, K) grid;
   - training samples neg_mult negatives per positive each epoch (pointwise
     log-sigmoid loss, matching Bishwash's run_DBLP_pc.py);
   - test negatives are subsampled to <=3 per paper, then ranked per paper;
   - scores CSV is [paper_id, conf_id, score] (local ids) to drop straight into
-    kendall_tau_across_seeds.py.
+    scripts.analysis.kendall_tau_across_seeds.
 
-Shared model/encoder/util code is imported from train_lp.py.
+Shared model/encoder/util code is imported from experiments.link_prediction.imdb.
 
 Usage:
-    python train_lp_dblp.py --config configs/dblp_lp.yaml \\
+    python -m experiments.link_prediction.dblp --config configs/dblp_lp.yaml \\
         --bundle data/preprocessed/DBLP_dhn_lp_pc_v1.pt --out-dir data/results_dblp
 """
 import argparse
@@ -34,7 +34,7 @@ from sklearn.metrics import (
 )
 
 from dhn.utils import get_act_module, get_optimizer
-from train_lp import (
+from experiments.link_prediction.imdb import (
     DHN_LP,
     move_bundle_to,
     resolve_layers_config,
@@ -118,7 +118,7 @@ def evaluate_test(model, data, test_pos, test_neg, offsets, hits_k, threshold):
 
 def write_scores_csv(path, test_pos, test_neg, pos_scores, neg_scores, offsets):
     """[paper_id, conf_id, score] in local-id space (matches run_DBLP_pc.py output
-    and kendall_tau_across_seeds.py defaults)."""
+    and scripts.analysis.kendall_tau_across_seeds defaults)."""
     poff, coff = offsets["paper"], offsets["conf"]
     tp = test_pos.detach().cpu().numpy()
     tn = test_neg.detach().cpu().numpy()

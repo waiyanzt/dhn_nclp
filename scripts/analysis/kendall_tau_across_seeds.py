@@ -9,7 +9,7 @@ Merges score CSVs on (head, tail) pairs and computes:
   - Top-k Kendall tau on the top-k ranked tails per head
 
 Usage (from MAGNN directory):
-  python kendall_tau_across_seeds.py \
+  python -m scripts.analysis.kendall_tau_across_seeds \
     --variant var1=csv_seed1.csv,csv_seed2.csv,csv_seed3.csv \
     --variant var2=csv_seed1.csv,csv_seed2.csv,csv_seed3.csv \
     --per-paper --hit1 --hitk --topk 3

@@ -33,7 +33,7 @@ def hom_collate(data_list):
 class NodeClassDataset:
     """Loads a precomputed node-classification graph.
 
-    Expects a `.pt` file produced by `preprocess/preprocess_IMDB_for_dhn_nc.py`
+    Expects a `.pt` file produced by `preprocess.imdb.node_classification`
     (or any equivalent preprocessor) containing:
         {
             'data':         PyG Data with x, y, edge_index, train/val/test_mask,

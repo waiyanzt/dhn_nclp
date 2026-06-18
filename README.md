@@ -26,6 +26,31 @@ The key components are:
 
 ---
 
+## Repository Layout
+
+- `dhn/` — reusable DHN implementation: layers, models, graph enumeration, datasets, and utility builders.
+- `experiments/` — runnable training and benchmark entrypoints, grouped by task.
+  - `experiments/node_classification/` — IMDb node-classification training and benchmarking.
+  - `experiments/link_prediction/` — IMDb, DBLP, and FB15k link-prediction runners.
+  - `experiments/original_graph_classification/` — original DHN graph-classification runner.
+- `preprocess/` — dataset-specific preprocessing entrypoints, grouped by dataset and task.
+- `scripts/diagnostics/` — one-off inspection and enumeration-cost probes.
+- `scripts/reports/` — result aggregation and HTML report generation.
+- `scripts/analysis/` — score-comparison analysis such as Kendall tau.
+- `KC_scripts/` — teammate baseline scripts, left in their original layout.
+- `configs/` and `data/` — experiment configs and raw/preprocessed/result artifacts.
+
+Use module paths from the repo root, for example:
+
+```bash
+python -m preprocess.imdb.link_prediction --task md --variant v1,v3
+python -m experiments.link_prediction.imdb --config configs/imdb_lp.yaml \
+    --bundle data/preprocessed/IMDB_dhn_lp_md_v1.pt \
+    --out-dir data/results
+```
+
+---
+
 ## IMDB Link Prediction
 
 DHN is also evaluated on **link prediction** over the IMDb heterogeneous graph, alongside the lab's RGCN baseline (Bishwash's `KC_scripts/MAGNN/preprocess_IMDB_rgcn_lp.py` + `run_IMDB_rgcn_lp.py`). To keep the comparison fair, DHN-LP uses the same CMPNN-determined edge splits and the same graph topology rules per variant as the RGCN baseline; the only difference is the model.
@@ -38,7 +63,7 @@ DHN is also evaluated on **link prediction** over the IMDb heterogeneous graph, 
 | `mg` | movie ↔ genre     | v1, v2, v3, v4    | 2 (3 genres total) |
 | `ml` | movie ↔ imdb_link | v1, v2, v3, v4    | 19 |
 
-Variants (v1–v4) reroute Link's neighbours through different node types — see Bishwash's preprocessor for the canonical topology rules; the same rules are mirrored in `preprocess/preprocess_IMDB_dhn_lp.py`.
+Variants (v1–v4) reroute Link's neighbours through different node types — see Bishwash's preprocessor for the canonical topology rules; the same rules are mirrored in `preprocess/imdb/link_prediction.py`.
 
 ### Step 1 — Generate CMPNN shared splits (once)
 
@@ -61,14 +86,14 @@ Expected shapes: train ≈ (2926, 2), val ≈ (418, 2), test ≈ (836, 2).
 
 ### Step 2 — Preprocess DHN-LP bundles
 
-`preprocess/preprocess_IMDB_dhn_lp.py` builds the heterograph from `data/raw/IMDB/movie_metadata.csv` using Bishwash's hardcoded v1–v4 topology rules, flattens it to a single homogeneous PyG graph with global node ids, enumerates `{p1, c2, p3}` patterns, and saves a `.pt` bundle per `(task, variant)`. Only **train** target edges enter the graph; val/test are never added, so leakage prevention is by construction.
+`preprocess/imdb/link_prediction.py` builds the heterograph from `data/raw/IMDB/movie_metadata.csv` using Bishwash's hardcoded v1–v4 topology rules, flattens it to a single homogeneous PyG graph with global node ids, enumerates `{p1, c2, p3}` patterns, and saves a `.pt` bundle per `(task, variant)`. Only **train** target edges enter the graph; val/test are never added, so leakage prevention is by construction.
 
 **Genre nodes are added to the graph for all three tasks** (Bishwash's RGCN runner has the `movie-genre` relation wired up for every task; this matches that intent). For `mg`, genre is the LP target so only train movie-genre edges go in; for `md` and `ml`, genre is auxiliary structural context — every movie carries its genre edge from `labels.npy` regardless of split (no leakage since genre is not the target).
 
 ```bash
-python preprocess/preprocess_IMDB_dhn_lp.py --task md --variant v1,v3
-python preprocess/preprocess_IMDB_dhn_lp.py --task mg --variant v1,v2,v3,v4 --neg-k 2
-python preprocess/preprocess_IMDB_dhn_lp.py --task ml --variant v1,v2,v3,v4
+python -m preprocess.imdb.link_prediction --task md --variant v1,v3
+python -m preprocess.imdb.link_prediction --task mg --variant v1,v2,v3,v4 --neg-k 2
+python -m preprocess.imdb.link_prediction --task ml --variant v1,v2,v3,v4
 ```
 
 Each invocation writes `data/preprocessed/IMDB_dhn_lp_<task>_<variant>.pt` containing:
@@ -80,7 +105,7 @@ Each invocation writes `data/preprocessed/IMDB_dhn_lp_<task>_<variant>.pt` conta
 
 ### Step 3 — Train (multi-seed, 3 seeds per bundle)
 
-`train_lp.py` runs the lab's standard 3-seed protocol (`1566911444, 20241017, 20251017`) per `(task, variant)` and writes both a per-seed scores CSV and an aggregated summary CSV. Eval contract: AUC, AP, Precision/Recall/F1/Accuracy @ 0.5, Hits@{1,3,5}, MRR. Pairwise log-sigmoid loss; val-BCE early stopping with patience 15 and a 200-epoch cap.
+`experiments/link_prediction/imdb.py` runs the lab's standard 3-seed protocol (`1566911444, 20241017, 20251017`) per `(task, variant)` and writes both a per-seed scores CSV and an aggregated summary CSV. Eval contract: AUC, AP, Precision/Recall/F1/Accuracy @ 0.5, Hits@{1,3,5}, MRR. Pairwise log-sigmoid loss; val-BCE early stopping with patience 15 and a 200-epoch cap.
 
 ```bash
 for task in md mg ml; do
@@ -89,7 +114,7 @@ for task in md mg ml; do
     mg|ml) variants="v1 v2 v3 v4" ;;
   esac
   for v in $variants; do
-    python train_lp.py \
+    python -m experiments.link_prediction.imdb \
       --config configs/imdb_lp.yaml \
       --bundle data/preprocessed/IMDB_dhn_lp_${task}_${v}.pt \
       --out-dir data/results
@@ -112,7 +137,7 @@ Under `data/results/` per `(task, variant)`:
 
 When evaluating a different pattern set (e.g. the prof's "our version" patterns), update **both**:
 
-1. `preprocess/preprocess_IMDB_dhn_lp.py` — the `PATTERNS` list and the `PATTERN_FNS` dict at the top of the file, then regenerate every bundle.
+1. `preprocess/imdb/link_prediction.py` — the `PATTERNS` list and the `PATTERN_FNS` dict at the top of the file, then regenerate every bundle.
 2. `configs/imdb_lp.yaml` — the kernel names under `model.layers_config`. Each kernel name must appear as a key in the bundle's `mapping_index_dict` (otherwise the kernel receives no counts and silently outputs zeros).
 
 The pattern set and the config kernels must match exactly; bundles are not portable across pattern sets.

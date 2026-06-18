@@ -1,7 +1,7 @@
 """Multi-seed, multi-variant benchmark driver for DHN node classification.
 
 For each (variant, seed) it:
-    1. Calls train_nc.run_once(...)
+    1. Calls experiments.node_classification.train.run_once(...)
     2. Saves the returned per-run dict to <out_dir>/<variant>/seed<seed>.pt
        (so Table 3 / kendall-tau analyses can reuse y_prob without retraining)
     3. Aggregates accuracy / precision / recall / micro-F1 / macro-F1
@@ -13,7 +13,6 @@ so this can be re-run incrementally as new IMDb variants get preprocessed.
 import argparse
 import csv
 import os
-import sys
 import warnings
 from copy import deepcopy
 
@@ -27,13 +26,11 @@ from sklearn.metrics import (
     recall_score,
 )
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from train_nc import load_config, run_once
+from experiments.node_classification.train import load_config, run_once
 
 
 # --- variant registry ---------------------------------------------------------
-# label -> path to the .pt bundle produced by preprocess/preprocess_IMDB_for_dhn_nc.py
+# label -> path to the .pt bundle produced by preprocess.imdb.node_classification
 DEFAULT_VARIANTS = {
     'IMDb1': 'data/preprocessed/IMDB_dhn_nc.pt',
     'IMDb2': 'data/preprocessed/IMDB_dhn_nc_t.pt',

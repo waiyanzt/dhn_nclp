@@ -1,15 +1,15 @@
 """Build a DHN bundle for FB15k-237 KG link prediction.
 
-p3 DROPPED — 188M rows infeasible (scripts/probe_fb15k_enumeration.py).
+p3 DROPPED — 188M rows infeasible (scripts.diagnostics.probe_fb15k_enumeration).
 Patterns: p1, c2 only.
 Splits: 80/10/10 stratified by relation (seed 1566911444).
 Graph: train triples only (undirected, relations collapsed) to avoid leakage.
 
 Bundle stores raw (h, r, t) integer-id triples. DistMult scorer + full
-entity-ranking eval live in train_lp_fb15k.py.
+entity-ranking eval lives in experiments.link_prediction.fb15k.
 
 Usage:
-    python preprocess/preprocess_fb15k_dhn_lp.py
+    python -m preprocess.fb15k.link_prediction
 """
 from __future__ import annotations
 

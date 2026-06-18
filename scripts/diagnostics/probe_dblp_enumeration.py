@@ -6,8 +6,8 @@ probe reports that sum (and the per-type breakdown) to decide PAPER_KEEP_FRAC
 and whether term nodes need capping/dropping — before risking an OOM.
 
 Usage:
-    uv run python scripts/probe_dblp_enumeration.py --frac 1.0
-    uv run python scripts/probe_dblp_enumeration.py --frac 0.10 --drop-terms
+    uv run python -m scripts.diagnostics.probe_dblp_enumeration --frac 1.0
+    uv run python -m scripts.diagnostics.probe_dblp_enumeration --frac 0.10 --drop-terms
 """
 import argparse
 import os

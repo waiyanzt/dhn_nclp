@@ -5,7 +5,7 @@ pairwise log-sigmoid loss, val-BCE early stopping (patience 15, max 200 epochs),
 no input features (learned nn.Embedding only).
 
 Usage:
-    python train_lp.py --config configs/imdb_lp.yaml \\
+    python -m experiments.link_prediction.imdb --config configs/imdb_lp.yaml \\
         --bundle data/preprocessed/IMDB_dhn_lp_md_v1.pt \\
         --out-dir data/results
 """

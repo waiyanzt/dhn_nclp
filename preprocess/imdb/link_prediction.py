@@ -22,8 +22,8 @@ Auxiliary genre nodes (added to the graph for ALL tasks):
 RGCN parity.
 
 Usage:
-    python preprocess/preprocess_IMDB_dhn_lp.py --task md --variant v1
-    python preprocess/preprocess_IMDB_dhn_lp.py --task ml --variant v1,v2,v3,v4
+    python -m preprocess.imdb.link_prediction --task md --variant v1
+    python -m preprocess.imdb.link_prediction --task ml --variant v1,v2,v3,v4
 """
 from __future__ import annotations
 
