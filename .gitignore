@@ -41,3 +41,5 @@ data/preprocessed/*.pt
 
 /data/raw/fb15k237_augmented_inverse/
 /data/raw/fb15k237_augmented_inverse.zip
+/data/raw/wordnet_3hops_augmented_full/
+/data/raw/wordnet_3hops_augmented_full.zip
