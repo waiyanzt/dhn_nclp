@@ -7,7 +7,6 @@ import time
 import numpy as np
 import torch
 import yaml
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from dhn.datasets import NodeClassDataset
@@ -18,6 +17,16 @@ from dhn.utils import (
     get_lr_scheduler,
     get_optimizer,
 )
+
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except ModuleNotFoundError:
+    SummaryWriter = None
+
+
+def synchronize_if_cuda(device):
+    if str(device).startswith("cuda") and torch.cuda.is_available():
+        torch.cuda.synchronize()
 
 
 def parse_args():
@@ -78,6 +87,7 @@ def evaluate(model, graph, mask, criterion):
 
 def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
     """Train once and return metrics/artifacts for benchmarking."""
+    total_start = time.perf_counter()
     config = dict(config)
 
     if seed is None:
@@ -97,10 +107,12 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
             config["logging"]["path"], config["logging"]["experiment"]
         )
 
-    logger = SummaryWriter(log_dir=logdir)
+    logger = SummaryWriter(log_dir=logdir) if SummaryWriter is not None else None
 
     if verbose:
         print(f"Logging to {logdir}")
+        if logger is None:
+            print("TensorBoard is not installed; scalar logging is disabled.")
 
     ds = NodeClassDataset(data_path)
     graph = move_graph_to(ds.data, device)
@@ -158,8 +170,10 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
     best_y_true = None
     best_y_pred = None
     best_y_prob = None
+    time_to_best_s = 0.0
 
-    start_time = time.time()
+    synchronize_if_cuda(device)
+    train_start = time.perf_counter()
 
     iterator = range(1, epochs + 1)
     if verbose:
@@ -185,17 +199,20 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
         val_acc, val_loss = evaluate(model, graph, val_mask, criterion)
         test_acc, test_loss = evaluate(model, graph, test_mask, criterion)
 
-        logger.add_scalar("loss/train", loss.item(), epoch)
-        logger.add_scalar("loss/val", val_loss, epoch)
-        logger.add_scalar("loss/test", test_loss, epoch)
-        logger.add_scalar("acc/train", train_acc, epoch)
-        logger.add_scalar("acc/val", val_acc, epoch)
-        logger.add_scalar("acc/test", test_acc, epoch)
+        if logger is not None:
+            logger.add_scalar("loss/train", loss.item(), epoch)
+            logger.add_scalar("loss/val", val_loss, epoch)
+            logger.add_scalar("loss/test", test_loss, epoch)
+            logger.add_scalar("acc/train", train_acc, epoch)
+            logger.add_scalar("acc/val", val_acc, epoch)
+            logger.add_scalar("acc/test", test_acc, epoch)
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_test_acc = test_acc
             best_epoch = epoch
+            synchronize_if_cuda(device)
+            time_to_best_s = time.perf_counter() - train_start
 
             model.eval()
             with torch.no_grad():
@@ -212,15 +229,23 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
                 f"loss={loss.item():.4f} tr={train_acc:.3f} va={val_acc:.3f} te={test_acc:.3f}"
             )
 
-    train_time_s = time.time() - start_time
+    synchronize_if_cuda(device)
+    train_time_s = time.perf_counter() - train_start
+    elapsed_time_s = time.perf_counter() - total_start
 
-    logger.add_scalar("final/best_val_acc", best_val_acc, 0)
-    logger.add_scalar("final/best_test_acc", best_test_acc, 0)
-    logger.close()
+    if logger is not None:
+        logger.add_scalar("final/best_val_acc", best_val_acc, 0)
+        logger.add_scalar("final/best_test_acc", best_test_acc, 0)
+        logger.add_scalar("final/train_time_s", train_time_s, 0)
+        logger.add_scalar("final/elapsed_time_s", elapsed_time_s, 0)
+        logger.add_scalar("final/time_to_best_s", time_to_best_s, 0)
+        logger.close()
 
     if verbose:
         print(f"\nBest val acc: {best_val_acc:.4f} at epoch {best_epoch}")
         print(f"Test acc at best val: {best_test_acc:.4f}")
+        print(f"Timing: train={train_time_s:.2f}s elapsed={elapsed_time_s:.2f}s "
+              f"best@={time_to_best_s:.2f}s")
 
     return {
         "seed": seed,
@@ -229,6 +254,9 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
         "best_test_acc": best_test_acc,
         "best_epoch": best_epoch,
         "train_time_s": train_time_s,
+        "eval_time_s": 0.0,
+        "elapsed_time_s": elapsed_time_s,
+        "time_to_best_s": time_to_best_s,
         "y_true": best_y_true,
         "y_pred": best_y_pred,
         "y_prob": best_y_prob,

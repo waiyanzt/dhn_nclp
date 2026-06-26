@@ -40,6 +40,7 @@ from experiments.link_prediction.imdb import (
     resolve_layers_config,
     score_pairs,
     set_seed,
+    synchronize_if_cuda,
     write_summary_csv,
 )
 
@@ -136,6 +137,7 @@ def write_scores_csv(path, test_pos, test_neg, pos_scores, neg_scores, offsets):
 
 
 def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=True):
+    total_start = time.perf_counter()
     set_seed(seed)
     bundle = torch.load(bundle_path, weights_only=False, map_location="cpu")
     data, splits, meta, offsets = (
@@ -173,7 +175,9 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
 
     rng = np.random.RandomState(seed)
     best_val, best_state, bad, best_epoch = float("inf"), None, 0, 0
-    start = time.time()
+    time_to_best_s = 0.0
+    synchronize_if_cuda(device)
+    train_start = time.perf_counter()
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -196,6 +200,8 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
         if v_loss < best_val:
             best_val, bad, best_epoch = v_loss, 0, epoch
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+            synchronize_if_cuda(device)
+            time_to_best_s = time.perf_counter() - train_start
         else:
             bad += 1
 
@@ -206,17 +212,32 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
                 print(f"  [seed={seed}] early stop @ epoch {epoch} (best val={best_val:.4f} @ {best_epoch})")
             break
 
-    train_time_s = time.time() - start
+    synchronize_if_cuda(device)
+    train_time_s = time.perf_counter() - train_start
     if best_state is not None:
         model.load_state_dict(best_state)
 
+    synchronize_if_cuda(device)
+    eval_start = time.perf_counter()
     metrics, (psc, nsc) = evaluate_test(model, data, test_pos, test_neg, offsets, hits_k, threshold)
-    metrics.update(seed=seed, train_time_s=train_time_s, best_val_loss=best_val, best_epoch=best_epoch)
+    synchronize_if_cuda(device)
+    eval_time_s = time.perf_counter() - eval_start
+    metrics.update(
+        seed=seed,
+        train_time_s=train_time_s,
+        eval_time_s=eval_time_s,
+        elapsed_time_s=time.perf_counter() - total_start,
+        time_to_best_s=time_to_best_s,
+        best_val_loss=best_val,
+        best_epoch=best_epoch,
+    )
 
     if verbose:
         h3 = metrics.get("hits@3", float("nan"))
         print(f"  [seed={seed}] TEST AUC={metrics['auc']:.4f} AP={metrics['ap']:.4f} "
               f"MRR={metrics['mrr']:.4f} H@1={metrics['hits@1']:.4f} H@3={h3:.4f}")
+        print(f"  [seed={seed}] time train={train_time_s:.2f}s eval={eval_time_s:.2f}s "
+              f"elapsed={metrics['elapsed_time_s']:.2f}s best@={time_to_best_s:.2f}s")
 
     if scores_csv_path is not None:
         write_scores_csv(scores_csv_path, test_pos, test_neg, psc, nsc, offsets)

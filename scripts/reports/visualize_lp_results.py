@@ -31,6 +31,8 @@ def load_imdb(path):
         clean = "\n".join(l for l in f if not l.lstrip('"').startswith("#"))
     df = pd.read_csv(_io.StringIO(clean))
     records = []
+    def g(row, col):
+        return float(row[col]) if col in row.index and pd.notna(row[col]) else float("nan")
     for _, row in df.iterrows():
         records.append({
             "dataset": "IMDb",
@@ -41,6 +43,14 @@ def load_imdb(path):
             "mrr":  float(row["mrr_mean"]),  "mrr_std":  float(row["mrr_std"]),
             "h1":   float(row["hits@1_mean"]), "h1_std": float(row["hits@1_std"]),
             "h3":   float(row["hits@3_mean"]), "h3_std": float(row["hits@3_std"]),
+            "train_time_s": g(row, "train_time_s_mean"),
+            "train_time_s_std": g(row, "train_time_s_std"),
+            "eval_time_s": g(row, "eval_time_s_mean"),
+            "eval_time_s_std": g(row, "eval_time_s_std"),
+            "elapsed_time_s": g(row, "elapsed_time_s_mean"),
+            "elapsed_time_s_std": g(row, "elapsed_time_s_std"),
+            "time_to_best_s": g(row, "time_to_best_s_mean"),
+            "time_to_best_s_std": g(row, "time_to_best_s_std"),
         })
     return records
 
@@ -59,6 +69,14 @@ def load_dblp_long(path, variant_label):
         "mrr":  m.get("mrr", float("nan")),  "mrr_std":  s.get("mrr", 0),
         "h1":   m.get("hits@1", float("nan")), "h1_std": s.get("hits@1", 0),
         "h3":   m.get("hits@3", float("nan")), "h3_std": s.get("hits@3", 0),
+        "train_time_s": m.get("train_time_s", float("nan")),
+        "train_time_s_std": s.get("train_time_s", 0),
+        "eval_time_s": m.get("eval_time_s", float("nan")),
+        "eval_time_s_std": s.get("eval_time_s", 0),
+        "elapsed_time_s": m.get("elapsed_time_s", float("nan")),
+        "elapsed_time_s_std": s.get("elapsed_time_s", 0),
+        "time_to_best_s": m.get("time_to_best_s", float("nan")),
+        "time_to_best_s_std": s.get("time_to_best_s", 0),
     }
 
 
@@ -71,6 +89,10 @@ def dblp_random():
         "h1": 0.25, "h1_std": 0.0,
         "h3": 0.75, "h3_std": 0.0,
         "h10": float("nan"), "h10_std": 0.0,
+        "train_time_s": float("nan"), "train_time_s_std": 0.0,
+        "eval_time_s": float("nan"), "eval_time_s_std": 0.0,
+        "elapsed_time_s": float("nan"), "elapsed_time_s_std": 0.0,
+        "time_to_best_s": float("nan"), "time_to_best_s_std": 0.0,
     }
 
 
@@ -91,6 +113,14 @@ def load_fb15k(path):
         "h1":   g(mean_row, "hits@1"), "h1_std": g(std_row, "hits@1"),
         "h3":   g(mean_row, "hits@3"), "h3_std": g(std_row, "hits@3"),
         "h10":  g(mean_row, "hits@10"), "h10_std": g(std_row, "hits@10"),
+        "train_time_s": g(mean_row, "train_time_s"),
+        "train_time_s_std": g(std_row, "train_time_s"),
+        "eval_time_s": g(mean_row, "eval_time_s"),
+        "eval_time_s_std": g(std_row, "eval_time_s"),
+        "elapsed_time_s": g(mean_row, "elapsed_time_s"),
+        "elapsed_time_s_std": g(std_row, "elapsed_time_s"),
+        "time_to_best_s": g(mean_row, "time_to_best_s"),
+        "time_to_best_s_std": g(std_row, "time_to_best_s"),
     }
 
 
@@ -220,6 +250,13 @@ METRIC_COLS = [
     ("h10", "h10_std", "Hits@10"),
 ]
 
+TIME_COLS = [
+    ("train_time_s", "train_time_s_std", "Time ↓"),
+    ("eval_time_s", "eval_time_s_std", "Eval s"),
+    ("elapsed_time_s", "elapsed_time_s_std", "Elapsed s"),
+    ("time_to_best_s", "time_to_best_s_std", "Best @ s"),
+]
+
 
 def fmt(val, std, bold=False):
     if np.isnan(val):
@@ -252,6 +289,8 @@ def build_table(records):
         for mk, sk, _ in METRIC_COLS:
             bold = not r["is_random"]
             cells.append(f'<td style="text-align:right">{fmt(r[mk], r[sk], bold)}</td>')
+        for mk, sk, _ in TIME_COLS:
+            cells.append(f'<td style="text-align:right">{fmt(r.get(mk, float("nan")), r.get(sk, 0.0))}</td>')
         rows.append(
             f'<tr style="background:{bg};{border_top}">{"".join(cells)}</tr>'
         )
@@ -296,6 +335,10 @@ No input features — <code>nn.Embedding</code> only. 3 seeds.</p>
   <th style="text-align:right">Hits@1</th>
   <th style="text-align:right">Hits@3</th>
   <th style="text-align:right">Hits@10</th>
+  <th style="text-align:right">Time ↓</th>
+  <th style="text-align:right">Eval s</th>
+  <th style="text-align:right">Elapsed s</th>
+  <th style="text-align:right">Best @ s</th>
 </tr></thead>
 <tbody>
 {table_rows}
@@ -311,7 +354,10 @@ No input features — <code>nn.Embedding</code> only. 3 seeds.</p>
   DBLP v1=area-paper edges, v2=area-venue edges.<br>
   <b>FB15k-237:</b> full entity ranking (14,541 entities), filtered MRR/Hits (head+tail avg).
   DistMult decoder. No p3 — hub entities make p3 enumeration 188M rows (~50GB).
-  Published DistMult baseline: MRR≈0.24 H@10≈0.42.
+  Published DistMult baseline: MRR≈0.24 H@10≈0.42.<br>
+  <b>Timing:</b> Time ↓ is synchronized training-loop wall time in seconds. Eval s is final held-out
+  evaluation time, Elapsed s is end-to-end per-seed runner time, and Best @ s is time to the best
+  validation checkpoint.
 </p>
 </body>
 </html>

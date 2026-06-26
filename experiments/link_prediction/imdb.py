@@ -36,6 +36,11 @@ from dhn.utils import get_act_module, get_optimizer
 TASK_TARGET_TYPE = {"md": "director", "mg": "genre", "ml": "link"}
 
 
+def synchronize_if_cuda(device):
+    if str(device).startswith("cuda") and torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
 def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -163,6 +168,7 @@ def evaluate_split(model, graph, pos, neg):
 # ---- One-seed training loop ------------------------------------------------
 
 def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=True):
+    total_start = time.perf_counter()
     set_seed(seed)
 
     bundle = torch.load(bundle_path, weights_only=False, map_location="cpu")
@@ -207,6 +213,7 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     best_state = None
     bad_epochs = 0
     best_epoch = 0
+    time_to_best_s = 0.0
 
     train_pos = splits["train_pos"]
     train_neg = splits["train_neg"]
@@ -215,7 +222,8 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     test_pos = splits["test_pos"]
     test_neg = splits["test_neg"]
 
-    start_time = time.time()
+    synchronize_if_cuda(device)
+    train_start = time.perf_counter()
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -236,6 +244,8 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
             bad_epochs = 0
             best_epoch = epoch
+            synchronize_if_cuda(device)
+            time_to_best_s = time.perf_counter() - train_start
         else:
             bad_epochs += 1
 
@@ -249,12 +259,17 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
                       f"(best val_loss={best_val_loss:.4f} at epoch {best_epoch})")
             break
 
-    train_time_s = time.time() - start_time
+    synchronize_if_cuda(device)
+    train_time_s = time.perf_counter() - train_start
 
     if best_state is not None:
         model.load_state_dict(best_state)
 
+    synchronize_if_cuda(device)
+    eval_start = time.perf_counter()
     test_sp, test_sn = evaluate_split(model, data, test_pos, test_neg)
+    synchronize_if_cuda(device)
+    eval_time_s = time.perf_counter() - eval_start
     metrics = compute_metrics(
         test_sp, test_sn,
         hits_k=tuple(config["eval"]["hits_k"]),
@@ -262,6 +277,9 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     )
     metrics["seed"] = seed
     metrics["train_time_s"] = train_time_s
+    metrics["eval_time_s"] = eval_time_s
+    metrics["elapsed_time_s"] = time.perf_counter() - total_start
+    metrics["time_to_best_s"] = time_to_best_s
     metrics["best_val_loss"] = best_val_loss
     metrics["best_epoch"] = best_epoch
 
@@ -269,6 +287,8 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
         print(f"  [seed={seed}] TEST  AUC={metrics['auc']:.4f} AP={metrics['ap']:.4f} "
               f"MRR={metrics['mrr']:.4f} H@1={metrics['hits@1']:.4f} "
               f"H@3={metrics['hits@3']:.4f} H@5={metrics['hits@5']:.4f}")
+        print(f"  [seed={seed}] time train={train_time_s:.2f}s eval={eval_time_s:.2f}s "
+              f"elapsed={metrics['elapsed_time_s']:.2f}s best@={time_to_best_s:.2f}s")
 
     if scores_csv_path is not None:
         write_scores_csv(

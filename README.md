@@ -107,6 +107,15 @@ Each invocation writes `data/preprocessed/IMDB_dhn_lp_<task>_<variant>.pt` conta
 
 `experiments/link_prediction/imdb.py` runs the lab's standard 3-seed protocol (`1566911444, 20241017, 20251017`) per `(task, variant)` and writes both a per-seed scores CSV and an aggregated summary CSV. Eval contract: AUC, AP, Precision/Recall/F1/Accuracy @ 0.5, Hits@{1,3,5}, MRR. Pairwise log-sigmoid loss; val-BCE early stopping with patience 15 and a 200-epoch cap.
 
+Timing contract for new benchmark runs:
+
+- `train_time_s`: wall-clock training-loop time, synchronized on CUDA so GPU kernels are included.
+- `eval_time_s`: final held-out test evaluation time. IMDb/DBLP/FB15k LP report this separately; IMDb NC keeps this at `0.0` because validation/test evaluation happens inside each epoch.
+- `elapsed_time_s`: end-to-end per-seed runner time, including bundle load, setup, training, and final evaluation.
+- `time_to_best_s`: wall-clock time from training start until the best validation checkpoint was first observed. This is the closest “time to accuracy/convergence” metric in these scripts.
+
+For lab comparisons, use `train_time_s` plus final metrics as the headline efficiency measure. Use `elapsed_time_s` when comparing full pipeline cost, and do not include preprocessing/enumeration time unless the experiment explicitly studies preprocessing cost.
+
 ```bash
 for task in md mg ml; do
   case $task in
@@ -131,7 +140,7 @@ Under `data/results/` per `(task, variant)`:
 | File | Rows | Use |
 |------|------|-----|
 | `lp_scores_<task>_<variant>_seed<S>.csv` | `(1+K) × N_test` | `[movie_local, target_local, score, label]` in CMPNN local-id space — directly comparable with Bishwash's RGCN scores CSVs (Kendall τ across pattern sets). |
-| `lp_summary_<task>_<variant>.csv` | one row per metric | `[task, variant, metric, mean, std, n_seeds]`. Std is computed with `ddof=0` to match the lab convention. |
+| `lp_summary_<task>_<variant>.csv` | one row per metric | `[task, variant, metric, mean, std, n_seeds]`, including timing metrics. Std is computed with `ddof=0` to match the lab convention. |
 
 ### Swapping the homomorphism patterns
 

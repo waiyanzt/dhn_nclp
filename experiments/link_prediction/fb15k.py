@@ -30,6 +30,7 @@ from experiments.link_prediction.imdb import (
     move_bundle_to,
     resolve_layers_config,
     set_seed,
+    synchronize_if_cuda,
     write_summary_csv,
 )
 
@@ -207,6 +208,7 @@ def evaluate_filtered(model, data, test_triples, all_triples, hits_k, eval_batch
 # ---- Per-seed runner --------------------------------------------------------
 
 def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
+    total_start = time.perf_counter()
     set_seed(seed)
     bundle = torch.load(bundle_path, weights_only=False, map_location="cpu")
     meta = bundle["meta"]
@@ -252,7 +254,9 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
 
     rng = np.random.RandomState(seed)
     best_val, best_state, bad, best_epoch = float("inf"), None, 0, 0
-    start_t = time.time()
+    time_to_best_s = 0.0
+    synchronize_if_cuda(device)
+    train_start = time.perf_counter()
 
     for epoch in range(1, epochs + 1):
         loss = train_epoch(model, data, train_triples, neg_per_pos, rng, device, optimizer)
@@ -262,6 +266,8 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
         if v_loss < best_val:
             best_val, bad, best_epoch = v_loss, 0, epoch
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+            synchronize_if_cuda(device)
+            time_to_best_s = time.perf_counter() - train_start
         else:
             bad += 1
 
@@ -275,18 +281,34 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
     if best_state is not None:
         model.load_state_dict(best_state)
 
+    synchronize_if_cuda(device)
+    train_time_s = time.perf_counter() - train_start
+
     print(f"  [seed={seed}] Running test evaluation (filtered MRR)...", flush=True)
+    synchronize_if_cuda(device)
+    eval_start = time.perf_counter()
     metrics = evaluate_filtered(
         model, data, test_triples, all_triples, hits_k, eval_batch_size, device,
         verbose=verbose,
     )
-    train_time_s = time.time() - start_t
-    metrics.update(seed=seed, train_time_s=train_time_s, best_val_loss=best_val, best_epoch=best_epoch)
+    synchronize_if_cuda(device)
+    eval_time_s = time.perf_counter() - eval_start
+    metrics.update(
+        seed=seed,
+        train_time_s=train_time_s,
+        eval_time_s=eval_time_s,
+        elapsed_time_s=time.perf_counter() - total_start,
+        time_to_best_s=time_to_best_s,
+        best_val_loss=best_val,
+        best_epoch=best_epoch,
+    )
 
     h1 = metrics.get("hits@1", float("nan"))
     h10 = metrics.get("hits@10", float("nan"))
     print(f"  [seed={seed}] TEST MRR={metrics['mrr']:.4f} MRR_tail={metrics['mrr_tail']:.4f} "
           f"H@1={h1:.4f} H@10={h10:.4f}")
+    print(f"  [seed={seed}] time train={train_time_s:.2f}s eval={eval_time_s:.2f}s "
+          f"elapsed={metrics['elapsed_time_s']:.2f}s best@={time_to_best_s:.2f}s")
     return metrics
 
 
@@ -299,7 +321,14 @@ def write_kg_summary_csv(path, per_seed, hits_k):
             + [f"hits@{k}" for k in hits_k]
             + [f"hits@{k}_tail" for k in hits_k]
             + [f"hits@{k}_head" for k in hits_k]
-            + ["best_epoch", "best_val_loss", "train_time_s"])
+            + [
+                "best_epoch",
+                "best_val_loss",
+                "train_time_s",
+                "eval_time_s",
+                "elapsed_time_s",
+                "time_to_best_s",
+            ])
 
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", newline="") as f:

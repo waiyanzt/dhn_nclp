@@ -13,6 +13,7 @@ so this can be re-run incrementally as new IMDb variants get preprocessed.
 import argparse
 import csv
 import os
+import sys
 import warnings
 from copy import deepcopy
 
@@ -86,11 +87,12 @@ def metrics_from_run(run, average='macro'):
 
 
 def aggregate(rows_for_variant):
-    """Given a list of per-seed dicts (metrics + train_time_s + best_epoch),
+    """Given a list of per-seed dicts (metrics + timing + best_epoch),
     return mean and std for each numeric column."""
     keys = [
         'accuracy', 'precision_macro', 'recall_macro',
-        'micro_f1', 'macro_f1', 'train_time_s', 'best_epoch',
+        'micro_f1', 'macro_f1', 'train_time_s', 'elapsed_time_s',
+        'time_to_best_s', 'best_epoch',
     ]
     agg = {}
     for k in keys:
@@ -147,12 +149,15 @@ def main():
                 print(f"  best_val={run['best_val_acc']:.4f} "
                       f"test@best={run['best_test_acc']:.4f} "
                       f"epoch={run['best_epoch']} "
-                      f"time={run['train_time_s']:.1f}s")
+                      f"train={run['train_time_s']:.1f}s "
+                      f"elapsed={run.get('elapsed_time_s', run['train_time_s']):.1f}s")
 
             metrics = metrics_from_run(run)
             per_variant_rows[label].append({
                 **metrics,
                 'train_time_s': run['train_time_s'],
+                'elapsed_time_s': run.get('elapsed_time_s', run['train_time_s']),
+                'time_to_best_s': run.get('time_to_best_s', 0.0),
                 'best_epoch': run['best_epoch'],
                 'seed': seed,
             })
@@ -163,7 +168,7 @@ def main():
         'variant', 'n_seeds',
         'accuracy', 'precision_macro', 'recall_macro',
         'micro_f1', 'macro_f1',
-        'train_time_s', 'best_epoch',
+        'train_time_s', 'elapsed_time_s', 'time_to_best_s', 'best_epoch',
     ]
     with open(csv_path, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -180,6 +185,8 @@ def main():
                 'micro_f1': fmt(agg['micro_f1_mean'], agg['micro_f1_std']),
                 'macro_f1': fmt(agg['macro_f1_mean'], agg['macro_f1_std']),
                 'train_time_s': fmt(agg['train_time_s_mean'], agg['train_time_s_std'], decimals=2),
+                'elapsed_time_s': fmt(agg['elapsed_time_s_mean'], agg['elapsed_time_s_std'], decimals=2),
+                'time_to_best_s': fmt(agg['time_to_best_s_mean'], agg['time_to_best_s_std'], decimals=2),
                 'best_epoch': fmt(agg['best_epoch_mean'], agg['best_epoch_std'], decimals=1),
             })
 
@@ -190,7 +197,8 @@ def main():
         writer.writerow([
             'variant', 'seed',
             'accuracy', 'precision_macro', 'recall_macro',
-            'micro_f1', 'macro_f1', 'train_time_s', 'best_epoch',
+            'micro_f1', 'macro_f1',
+            'train_time_s', 'elapsed_time_s', 'time_to_best_s', 'best_epoch',
         ])
         for label in variants:
             for r in per_variant_rows[label]:
@@ -202,6 +210,8 @@ def main():
                     f"{r['micro_f1']:.4f}",
                     f"{r['macro_f1']:.4f}",
                     f"{r['train_time_s']:.2f}",
+                    f"{r['elapsed_time_s']:.2f}",
+                    f"{r['time_to_best_s']:.2f}",
                     r['best_epoch'],
                 ])
 

@@ -29,7 +29,19 @@ RANDOM = {
            "hits@1": 0.0500, "hits@3": 0.1500, "hits@5": 0.2500},
 }
 
-HEADLINE_METRICS = ["auc", "ap", "mrr", "hits@1", "hits@3", "hits@5", "best_epoch"]
+HEADLINE_METRICS = [
+    "auc",
+    "ap",
+    "mrr",
+    "hits@1",
+    "hits@3",
+    "hits@5",
+    "best_epoch",
+    "train_time_s",
+    "eval_time_s",
+    "elapsed_time_s",
+    "time_to_best_s",
+]
 PATTERN = re.compile(r"lp_summary_(md|mg|ml)_(v[1-4])\.csv$")
 
 
