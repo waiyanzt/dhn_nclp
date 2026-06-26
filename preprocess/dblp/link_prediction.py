@@ -5,14 +5,15 @@ preprocess_DBLP{1,2}.py) so the graph content matches the baseline, then flatten
 the author/paper/term/conf/area heterograph to a single homogeneous PyG Data with
 DHN pattern enumerations {p1, c2, p3}.
 
-Task: paper <-> conf (predict a paper's venue). Two topology variants:
+Task: paper <-> conf (predict a paper's venue). Three topology variants:
   - v1 (area-paper) : edges P-A (all), P-T (all), P-C (TRAIN only), P-R (paper-area)
   - v2 (area-venue) : edges P-A (all), P-T (all), P-C (TRAIN only), C-R (conf-area)
+  - v3 (area-author): edges P-A (all), P-T (all), P-C (TRAIN only), A-R (author-area)
 
 Leakage prevention by construction: only TRAIN paper-conf positives enter the
-graph; val/test target edges are never added. Area edges (P-R / C-R) are
+graph; val/test target edges are never added. Area edges (P-R / C-R / A-R) are
 auxiliary structural context (area is not the LP target), so they use all
-papers regardless of split, matching the baseline.
+available labels regardless of split.
 
 Negatives are a FLAT POOL (M, 2) of (paper, conf) pairs, not a (N, K) grid --
 this matches the DBLP runner, which samples neg_mult per batch at train time
@@ -26,7 +27,7 @@ Splits come from data/preprocessed/DBLP_shared_splits/DBLP_pc_shared_splits.npz
 
 Usage:
     python -m preprocess.dblp.link_prediction --variant v1
-    python -m preprocess.dblp.link_prediction --variant v1,v2
+    python -m preprocess.dblp.link_prediction --variant v1,v2,v3
 """
 from __future__ import annotations
 
@@ -71,7 +72,7 @@ def set_seed(seed: int) -> None:
 
 def load_filtered(raw_dir: str, paper_subset: np.ndarray):
     """Replicate the baseline's filtering + the exact paper_subset, then build
-    per-type id maps. Returns (pa, pt, pc, pr, maps, counts)."""
+    per-type id maps. Returns (pa, pt, pc, pr, ar, maps, counts)."""
     al = pd.read_csv(os.path.join(raw_dir, "author_label.txt"), sep="\t",
                      names=["author_id", "label", "name"], header=None, encoding="utf-8")
     pa = pd.read_csv(os.path.join(raw_dir, "paper_author.txt"), sep="\t",
@@ -105,12 +106,15 @@ def load_filtered(raw_dir: str, paper_subset: np.ndarray):
     pr = (pa.assign(area_id=pa["author_id"].map(a2r))
           [["paper_id", "area_id"]].drop_duplicates().dropna().reset_index(drop=True))
     pr["area_id"] = pr["area_id"].astype(np.int64)
+    ar = (al[["author_id", "label"]].rename(columns={"label": "area_id"})
+          .drop_duplicates().dropna().reset_index(drop=True))
+    ar["area_id"] = ar["area_id"].astype(np.int64)
 
     Au_ids = sorted(al["author_id"].unique())
     Pa_ids = sorted(valid_papers)
     Te_ids = sorted(pt["term_id"].unique())
     Co_ids = sorted(pc["conf_id"].unique())
-    Ar_ids = sorted(pr["area_id"].unique())
+    Ar_ids = sorted(set(pr["area_id"].unique()) | set(ar["area_id"].unique()))
     maps = {
         "author": {a: i for i, a in enumerate(Au_ids)},
         "paper": {p: i for i, p in enumerate(Pa_ids)},
@@ -119,7 +123,7 @@ def load_filtered(raw_dir: str, paper_subset: np.ndarray):
         "area": {r: i for i, r in enumerate(Ar_ids)},
     }
     counts = {k: len(v) for k, v in maps.items()}
-    return pa, pt, pc, pr, maps, counts
+    return pa, pt, pc, pr, ar, maps, counts
 
 
 def map_pairs(arr, Pmap, Cmap):
@@ -141,7 +145,7 @@ def _add(d: dict, key: str, u: int, v: int) -> None:
     d[key][1].append(int(v))
 
 
-def build_typed_edges(variant, pa, pt, pc, pr, train_pos_local, maps):
+def build_typed_edges(variant, pa, pt, pc, pr, ar, train_pos_local, maps):
     """Local-id typed edges. P-C is TRAIN-only; area edges are auxiliary (all)."""
     raw: dict = {}
     Au, Pa, Te, Co, Ar = (maps["author"], maps["paper"], maps["term"],
@@ -172,8 +176,13 @@ def build_typed_edges(variant, pa, pt, pc, pr, train_pos_local, maps):
         for c, r in cr.itertuples(index=False):
             if c in Co and r in Ar:
                 _add(raw, "conf-area", Co[c], Ar[r])
+    elif variant == "v3":
+        # A-R (author-area): direct author labels from author_label.txt
+        for a, r in ar[["author_id", "area_id"]].itertuples(index=False):
+            if a in Au and r in Ar:
+                _add(raw, "author-area", Au[a], Ar[r])
     else:
-        raise ValueError(f"variant must be v1 or v2, got {variant}")
+        raise ValueError(f"variant must be v1, v2, or v3, got {variant}")
     return raw
 
 
@@ -206,7 +215,7 @@ def preprocess_one(raw_dir, shared_npz, variant, out_path, seed):
 
     z = np.load(shared_npz)
     paper_subset = z["paper_subset"]
-    pa, pt, pc, pr, maps, counts = load_filtered(raw_dir, paper_subset)
+    pa, pt, pc, pr, ar, maps, counts = load_filtered(raw_dir, paper_subset)
     A, P, T, C, R = (counts["author"], counts["paper"], counts["term"],
                      counts["conf"], counts["area"])
 
@@ -227,7 +236,7 @@ def preprocess_one(raw_dir, shared_npz, variant, out_path, seed):
     print(f"  Pos: train={len(train_pos_l)} val={len(val_pos_l)} test={len(test_pos_l)}")
     print(f"  Neg pool: train={len(train_neg_l)} val={len(val_neg_l)} test={len(test_neg_l)}")
 
-    typed_edges = build_typed_edges(variant, pa, pt, pc, pr, train_pos_l, maps)
+    typed_edges = build_typed_edges(variant, pa, pt, pc, pr, ar, train_pos_l, maps)
     print("  Typed edge counts:")
     for k, (u, _) in typed_edges.items():
         print(f"    {k:<14s} {len(u)}")
@@ -300,15 +309,19 @@ def preprocess_one(raw_dir, shared_npz, variant, out_path, seed):
 
 def _parse_variants(s):
     vals = [x.strip().lower() for x in str(s).split(",") if x.strip()]
-    bad = [v for v in vals if v not in {"v1", "v2"}]
+    bad = [v for v in vals if v not in {"v1", "v2", "v3"}]
     if bad:
-        raise SystemExit(f"Unknown variant(s): {bad}; expected v1 and/or v2")
+        raise SystemExit(f"Unknown variant(s): {bad}; expected v1, v2, and/or v3")
     return vals
 
 
 def main():
     ap = argparse.ArgumentParser(description="DBLP DHN-LP preprocessing (homogeneous-flat).")
-    ap.add_argument("--variant", default="v1", help="Comma-separated: v1 (area-paper), v2 (area-venue).")
+    ap.add_argument(
+        "--variant",
+        default="v1",
+        help="Comma-separated: v1 (area-paper), v2 (area-venue), v3 (area-author).",
+    )
     ap.add_argument("--raw-dir", default="data/raw/DBLP")
     ap.add_argument("--shared-npz",
                     default="data/preprocessed/DBLP_shared_splits/DBLP_pc_shared_splits.npz")

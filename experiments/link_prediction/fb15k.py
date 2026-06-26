@@ -1,6 +1,7 @@
-"""Train DHN for FB15k-237 KG link prediction (multi-seed).
+"""Train DHN for KG link prediction (multi-seed).
 
-Architectural differences from DBLP/IMDb:
+Used for FB15k-237 and WordNet-style KG bundles. Architectural differences
+from DBLP/IMDb:
   - Decoder: DistMult (per-relation diagonal W_r).
   - Evaluation: filtered MRR + Hits@{1,3,10} via full entity ranking
     (both head and tail prediction; standard KG-LP protocol).
@@ -363,7 +364,7 @@ def write_kg_summary_csv(path, per_seed, hits_k):
 # ---- Main -------------------------------------------------------------------
 
 def main():
-    ap = argparse.ArgumentParser(description="Train DHN for FB15k-237 KG link prediction.")
+    ap = argparse.ArgumentParser(description="Train DHN for KG link prediction.")
     ap.add_argument("--config", default="configs/fb15k_lp.yaml")
     ap.add_argument("--bundle", default="data/preprocessed/FB15k237_dhn_lp.pt")
     ap.add_argument("--out-dir", default="data/results_fb15k")
@@ -384,7 +385,9 @@ def main():
     bundle = torch.load(args.bundle, weights_only=False, map_location="cpu")
     meta = bundle["meta"]
     del bundle
-    print(f"=== DHN-LP FB15k-237 | entities={meta['num_entities']:,} "
+    dataset_name = meta.get("source", meta.get("dataset", "FB15k-237"))
+    dataset_slug = meta.get("dataset_slug", "fb15k")
+    print(f"=== DHN-LP {dataset_name} | entities={meta['num_entities']:,} "
           f"relations={meta['num_relations']} | seeds={seeds} ===")
 
     hits_k = tuple(config["eval"]["hits_k"])
@@ -392,7 +395,7 @@ def main():
     for seed in seeds:
         per_seed.append(run_one_seed(config, args.bundle, seed, device, args.out_dir, verbose=True))
 
-    summary_path = os.path.join(args.out_dir, "lp_summary_fb15k.csv")
+    summary_path = os.path.join(args.out_dir, f"lp_summary_{dataset_slug}.csv")
     write_kg_summary_csv(summary_path, per_seed, hits_k)
 
     # Print final mean±std
