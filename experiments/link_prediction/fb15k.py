@@ -5,7 +5,7 @@ from DBLP/IMDb:
   - Decoder: DistMult (per-relation diagonal W_r).
   - Evaluation: filtered MRR + Hits@{1,3,10} via full entity ranking
     (both head and tail prediction; standard KG-LP protocol).
-  - Loss: BCE with corrupt-tail negative sampling.
+  - Loss: BCE with balanced corrupt-head/corrupt-tail negative sampling.
   - No input features: nn.Embedding(num_entities, in_dim) only.
 
 Usage:
@@ -79,6 +79,24 @@ class DHN_LP_FB15k(nn.Module):
 
 # ---- Training ---------------------------------------------------------------
 
+def sample_negative_triples(triples, neg_per_pos, rng, num_entities, device):
+    """Corrupt one endpoint per negative, choosing heads and tails evenly."""
+    h_ids = triples[:, 0].repeat_interleave(neg_per_pos).clone()
+    r_ids = triples[:, 1].repeat_interleave(neg_per_pos)
+    t_ids = triples[:, 2].repeat_interleave(neg_per_pos).clone()
+    n_neg = len(h_ids)
+
+    replacements = torch.from_numpy(
+        rng.randint(0, num_entities, n_neg).astype(np.int64)
+    ).to(device)
+    corrupt_head = torch.from_numpy(
+        rng.randint(0, 2, n_neg).astype(np.bool_)
+    ).to(device)
+    h_ids[corrupt_head] = replacements[corrupt_head]
+    t_ids[~corrupt_head] = replacements[~corrupt_head]
+    return h_ids, r_ids, t_ids
+
+
 def train_epoch(model, data, train_triples, neg_per_pos, rng, device, optimizer):
     model.train()
     optimizer.zero_grad()
@@ -90,13 +108,10 @@ def train_epoch(model, data, train_triples, neg_per_pos, rng, device, optimizer)
 
     pos_scores = model.score(h[h_ids], r_ids, h[t_ids])
 
-    n = len(train_triples)
-    neg_t = torch.from_numpy(
-        rng.randint(0, model.num_entities, (n * neg_per_pos,)).astype(np.int64)
-    ).to(device)
-    h_rep = h_ids.repeat_interleave(neg_per_pos)
-    r_rep = r_ids.repeat_interleave(neg_per_pos)
-    neg_scores = model.score(h[h_rep], r_rep, h[neg_t])
+    neg_h, neg_r, neg_t = sample_negative_triples(
+        train_triples, neg_per_pos, rng, model.num_entities, device
+    )
+    neg_scores = model.score(h[neg_h], neg_r, h[neg_t])
 
     loss = -(F.logsigmoid(pos_scores).mean() + F.logsigmoid(-neg_scores).mean())
     loss.backward()
@@ -112,13 +127,10 @@ def compute_val_loss(model, data, val_triples, neg_per_pos, rng, device):
     r_ids = val_triples[:, 1]
     t_ids = val_triples[:, 2]
     pos_scores = model.score(h[h_ids], r_ids, h[t_ids])
-    n = len(val_triples)
-    neg_t = torch.from_numpy(
-        rng.randint(0, model.num_entities, (n * neg_per_pos,)).astype(np.int64)
-    ).to(device)
-    h_rep = h_ids.repeat_interleave(neg_per_pos)
-    r_rep = r_ids.repeat_interleave(neg_per_pos)
-    neg_scores = model.score(h[h_rep], r_rep, h[neg_t])
+    neg_h, neg_r, neg_t = sample_negative_triples(
+        val_triples, neg_per_pos, rng, model.num_entities, device
+    )
+    neg_scores = model.score(h[neg_h], neg_r, h[neg_t])
     return -(F.logsigmoid(pos_scores).mean() + F.logsigmoid(-neg_scores).mean()).item()
 
 

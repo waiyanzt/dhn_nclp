@@ -10,6 +10,12 @@ FB15k package:
 Unlike FB15k, WordNet p3 enumeration is tractable for these variants, so the
 default pattern set is the vanilla DHN set {p1, c2, p3}.
 
+Splits follow the lab protocol: validation and test triples come from the
+intersection shared by all variants, while each variant retains its additional
+triples in training. Generate them first with:
+
+    python -m preprocess.wordnet.shared_splits
+
 Usage:
     python -m preprocess.wordnet.link_prediction --variant no_changes
     python -m preprocess.wordnet.link_prediction --variant no_changes,all_inverse_edges,transitive_edges
@@ -47,59 +53,6 @@ PATTERN_FNS = {
 }
 
 
-def load_id_maps(raw_dir: Path):
-    ent2id = {}
-    with open(raw_dir / "entities.dict") as f:
-        for line in f:
-            eid, entity = line.rstrip("\n").split("\t")
-            ent2id[entity] = int(eid)
-
-    rel2id = {}
-    with open(raw_dir / "relations.dict") as f:
-        for line in f:
-            rid, rel = line.rstrip("\n").split("\t")
-            rel2id[rel] = int(rid)
-
-    return ent2id, rel2id
-
-
-def load_triples(raw_dir: Path, ent2id, rel2id):
-    rows = []
-    with open(raw_dir / "data.txt") as f:
-        for line in f:
-            h, r, t = line.rstrip("\n").split("\t")
-            rows.append((ent2id[h], rel2id[r], ent2id[t]))
-    return np.asarray(rows, dtype=np.int64)
-
-
-def stratified_split(triples, seed):
-    """80/10/10 per relation. Relations with <5 triples go fully to train."""
-    rng = np.random.RandomState(seed)
-    train_idx, val_idx, test_idx = [], [], []
-    for rel_id in np.unique(triples[:, 1]):
-        idx = np.where(triples[:, 1] == rel_id)[0]
-        rng.shuffle(idx)
-        n = len(idx)
-        if n < 5:
-            train_idx.extend(idx.tolist())
-            continue
-        n_test = max(1, round(n * 0.10))
-        n_val = max(1, round(n * 0.10))
-        n_train = n - n_val - n_test
-        if n_train < 1:
-            train_idx.extend(idx.tolist())
-            continue
-        train_idx.extend(idx[:n_train].tolist())
-        val_idx.extend(idx[n_train:n_train + n_val].tolist())
-        test_idx.extend(idx[n_train + n_val:].tolist())
-
-    return (
-        triples[sorted(train_idx)],
-        triples[sorted(val_idx)],
-        triples[sorted(test_idx)],
-    )
-
-
 def build_graph(train_triples, num_entities):
     """Undirected simple entity graph built from train triples only."""
     lo = np.minimum(train_triples[:, 0], train_triples[:, 2])
@@ -117,22 +70,26 @@ def build_graph(train_triples, num_entities):
     return nxg, edge_index
 
 
-def preprocess_one(raw_root: Path, variant: str, out_dir: Path, seed: int) -> None:
+def preprocess_one(raw_root: Path, shared_splits: Path, variant: str,
+                   out_dir: Path) -> None:
     raw_dir = raw_root / variant
     if not raw_dir.is_dir():
         raise SystemExit(f"Missing WordNet variant directory: {raw_dir}")
 
     print(f"\n=== WordNet DHN-LP preprocess | variant={variant} ===", flush=True)
-    ent2id, rel2id = load_id_maps(raw_dir)
-    num_entities = len(ent2id)
-    num_relations = len(rel2id)
+    split_data = np.load(shared_splits)
+    entity_vocab = split_data["entity_vocab"]
+    relation_vocab = split_data["relation_vocab"]
+    ent2id = {name: idx for idx, name in enumerate(entity_vocab.tolist())}
+    rel2id = {name: idx for idx, name in enumerate(relation_vocab.tolist())}
+    num_entities = int(split_data["num_entities"])
+    num_relations = int(split_data["num_relations"])
     print(f"  Entities: {num_entities:,}  Relations: {num_relations:,}")
 
-    triples = load_triples(raw_dir, ent2id, rel2id)
-    print(f"  Total triples: {len(triples):,}")
-
-    train, val, test = stratified_split(triples, seed)
-    print(f"  Split: train={len(train):,} val={len(val):,} test={len(test):,}")
+    train = split_data[f"train_pos_{variant}"].astype(np.int64, copy=False)
+    val = split_data["val_pos"].astype(np.int64, copy=False)
+    test = split_data["test_pos"].astype(np.int64, copy=False)
+    print(f"  Shared split: train={len(train):,} val={len(val):,} test={len(test):,}")
 
     nxg, edge_index = build_graph(train, num_entities)
     print(f"  Graph: nodes={nxg.number_of_nodes():,} undirected_edges={nxg.number_of_edges():,}")
@@ -169,7 +126,8 @@ def preprocess_one(raw_root: Path, variant: str, out_dir: Path, seed: int) -> No
             "num_relations": num_relations,
             "num_nodes_total": num_entities,
             "patterns": PATTERNS,
-            "splits_seed": seed,
+            "splits_seed": int(split_data.get("split_seed", SEED)),
+            "split_protocol": "shared_intersection_80_10_10",
             "source": f"WordNet 3-hop augmented full/{variant}",
         },
     }
@@ -197,11 +155,22 @@ def main():
         help="Comma-separated: no_changes, all_inverse_edges, transitive_edges",
     )
     ap.add_argument("--out-dir", default=OUT_DIR)
-    ap.add_argument("--seed", type=int, default=SEED)
+    ap.add_argument(
+        "--shared-splits",
+        default="data/preprocessed/WordNet_shared_splits.npz",
+    )
     args = ap.parse_args()
 
+    shared_splits = Path(args.shared_splits)
+    if not shared_splits.is_file():
+        raise SystemExit(
+            f"Missing shared splits: {shared_splits}\n"
+            "Run: python -m preprocess.wordnet.shared_splits"
+        )
     for variant in parse_variants(args.variant):
-        preprocess_one(Path(args.raw_root), variant, Path(args.out_dir), args.seed)
+        preprocess_one(
+            Path(args.raw_root), shared_splits, variant, Path(args.out_dir)
+        )
 
 
 if __name__ == "__main__":
