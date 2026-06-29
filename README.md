@@ -31,14 +31,15 @@ The key components are:
 - `dhn/` — reusable DHN implementation: layers, models, graph enumeration, datasets, and utility builders.
 - `experiments/` — runnable training and benchmark entrypoints, grouped by task.
   - `experiments/node_classification/` — IMDb node-classification training and benchmarking.
-  - `experiments/link_prediction/` — IMDb, DBLP, and FB15k link-prediction runners.
+  - `experiments/link_prediction/` — IMDb, DBLP, and WordNet link-prediction runners.
   - `experiments/original_graph_classification/` — original DHN graph-classification runner.
 - `preprocess/` — dataset-specific preprocessing entrypoints, grouped by dataset and task.
 - `scripts/diagnostics/` — one-off inspection and enumeration-cost probes.
 - `scripts/reports/` — result aggregation and HTML report generation.
 - `scripts/analysis/` — score-comparison analysis such as Kendall tau.
 - `KC_scripts/` — teammate baseline scripts, left in their original layout.
-- `configs/` and `data/` — experiment configs and raw/preprocessed/result artifacts.
+- `configs/` and `data/` — experiment configs and raw/preprocessed artifacts.
+- `results/` — benchmark outputs grouped first by GPU, then dataset and task.
 
 Use module paths from the repo root, for example:
 
@@ -46,7 +47,7 @@ Use module paths from the repo root, for example:
 python -m preprocess.imdb.link_prediction --task md --variant v1,v3
 python -m experiments.link_prediction.imdb --config configs/imdb_lp.yaml \
     --bundle data/preprocessed/IMDB_dhn_lp_md_v1.pt \
-    --out-dir data/results
+    --out-dir results/v100/imdb_lp_baseline
 ```
 
 ---
@@ -110,7 +111,7 @@ Each invocation writes `data/preprocessed/IMDB_dhn_lp_<task>_<variant>.pt` conta
 Timing contract for new benchmark runs:
 
 - `train_time_s`: wall-clock training-loop time, synchronized on CUDA so GPU kernels are included.
-- `eval_time_s`: final held-out test evaluation time. IMDb/DBLP/FB15k LP report this separately; IMDb NC keeps this at `0.0` because validation/test evaluation happens inside each epoch.
+- `eval_time_s`: final held-out test evaluation time. IMDb, DBLP, and WordNet LP report this separately; IMDb NC keeps this at `0.0` because validation/test evaluation happens inside each epoch.
 - `elapsed_time_s`: end-to-end per-seed runner time, including bundle load, setup, training, and final evaluation.
 - `time_to_best_s`: wall-clock time from training start until the best validation checkpoint was first observed. This is the closest “time to accuracy/convergence” metric in these scripts.
 
@@ -126,7 +127,7 @@ for task in md mg ml; do
     python -m experiments.link_prediction.imdb \
       --config configs/imdb_lp.yaml \
       --bundle data/preprocessed/IMDB_dhn_lp_${task}_${v}.pt \
-      --out-dir data/results
+      --out-dir results/v100/imdb_lp_baseline
   done
 done
 ```
@@ -135,7 +136,7 @@ Total sweep: 10 `(task, variant)` combinations × 3 seeds = 30 training runs per
 
 ### Outputs
 
-Under `data/results/` per `(task, variant)`:
+Under `results/v100/imdb_lp_baseline/` per `(task, variant)`:
 
 | File | Rows | Use |
 |------|------|-----|

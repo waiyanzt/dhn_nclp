@@ -30,3 +30,14 @@ training:
 eval:
   hits_k: [1, 3, 10]
   eval_batch_size: 256
+  # Match the lab WordNet table: one positive plus 50 deterministic corrupt
+  # tails per query, logit threshold 0, and macro P/R/F1.
+  binary_k: 50
+  binary_rng_seed: 42
+
+artifacts:
+  save_best_checkpoint: true
+  kendall:
+    enabled: true
+    num_candidates: 200
+    candidate_rng_seed: 42
