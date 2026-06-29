@@ -39,14 +39,14 @@ DEFAULT_VARIANTS = {
     'IMDb4': 'data/preprocessed/IMDB_dhn_nc_t_3.pt',
 }
 
-DEFAULT_SEEDS = [42, 43, 44]
+DEFAULT_SEEDS = [1566911444, 20241017, 20251017]
 
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument('--config', type=str, default='configs/imdb_nc.yaml')
     p.add_argument('--seeds', type=int, nargs='+', default=DEFAULT_SEEDS,
-                   help='Seeds to run per variant (default: 42 43 44)')
+                   help='Seeds to run per variant (default: lab-standard three seeds)')
     p.add_argument('--variants', type=str, nargs='+', default=None,
                    help='Subset of variant labels to run; default = all available')
     p.add_argument('--out-dir', type=str, default='runs/benchmark_imdb_nc',
