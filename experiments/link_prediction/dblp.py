@@ -12,7 +12,8 @@ Shared model/encoder/util code is imported from experiments.link_prediction.imdb
 
 Usage:
     python -m experiments.link_prediction.dblp --config configs/dblp_lp.yaml \\
-        --bundle data/preprocessed/DBLP_dhn_lp_pc_v1.pt --out-dir data/results_dblp
+        --bundle data/preprocessed/DBLP_dhn_lp_pc_v1.pt \\
+        --out-dir results/v100/dblp_lp_baseline
 """
 import argparse
 import csv
@@ -214,6 +215,7 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
 
     synchronize_if_cuda(device)
     train_time_s = time.perf_counter() - train_start
+    epochs_trained = epoch
     if best_state is not None:
         model.load_state_dict(best_state)
 
@@ -230,6 +232,7 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
         time_to_best_s=time_to_best_s,
         best_val_loss=best_val,
         best_epoch=best_epoch,
+        epochs_trained=epochs_trained,
     )
 
     if verbose:
@@ -237,7 +240,8 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
         print(f"  [seed={seed}] TEST AUC={metrics['auc']:.4f} AP={metrics['ap']:.4f} "
               f"MRR={metrics['mrr']:.4f} H@1={metrics['hits@1']:.4f} H@3={h3:.4f}")
         print(f"  [seed={seed}] time train={train_time_s:.2f}s eval={eval_time_s:.2f}s "
-              f"elapsed={metrics['elapsed_time_s']:.2f}s best@={time_to_best_s:.2f}s")
+              f"elapsed={metrics['elapsed_time_s']:.2f}s best@={time_to_best_s:.2f}s "
+              f"epochs={epochs_trained}")
 
     if scores_csv_path is not None:
         write_scores_csv(scores_csv_path, test_pos, test_neg, psc, nsc, offsets)
@@ -248,7 +252,7 @@ def main():
     ap = argparse.ArgumentParser(description="Train DHN for DBLP paper-venue LP (multi-seed).")
     ap.add_argument("--config", default="configs/dblp_lp.yaml")
     ap.add_argument("--bundle", required=True)
-    ap.add_argument("--out-dir", default="data/results_dblp")
+    ap.add_argument("--out-dir", default="results/v100/dblp_lp_baseline")
     ap.add_argument("--seeds", default="")
     ap.add_argument("--device", default="")
     args = ap.parse_args()
