@@ -253,6 +253,8 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
         in_dim=in_dim,
         layers_config=layers_config,
         act_module=get_act_module(config["model"]["activation"]["name"]),
+        mapping_chunk_size=config["model"].get("mapping_chunk_size"),
+        checkpoint_chunks=config["model"].get("checkpoint_chunks", True),
         **act_kwargs,
     ).to(device)
 

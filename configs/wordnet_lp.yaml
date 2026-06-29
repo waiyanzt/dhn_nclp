@@ -4,6 +4,9 @@ seeds: [1566911444, 20241017, 20251017]
 
 model:
   in_dim: 64
+  # Bound p3 activation memory; checkpointing recomputes chunks in backward.
+  mapping_chunk_size: 100000
+  checkpoint_chunks: true
   # WordNet p3 is tractable, so use the vanilla DHN KG pattern set.
   layers_config:
     - p1: [-1, 64, 1]
