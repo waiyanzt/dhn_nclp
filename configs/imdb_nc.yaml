@@ -26,6 +26,7 @@ model:
 
 training:
   epochs: 200
+  patience: 40
   loss:
     name: CrossEntropyLoss
     kwargs:

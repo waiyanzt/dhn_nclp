@@ -188,6 +188,7 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
         scheduler = sched_fn(optimizer, **sched_cfg.get("kwargs", {}))
 
     epochs = config["training"]["epochs"]
+    patience = config["training"].get("patience")
     train_mask = graph.train_mask
     val_mask = graph.val_mask
     test_mask = graph.test_mask
@@ -199,6 +200,8 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
     best_y_pred = None
     best_y_prob = None
     time_to_best_s = 0.0
+    bad_epochs = 0
+    epochs_trained = 0
 
     synchronize_if_cuda(device)
     train_start = time.perf_counter()
@@ -208,6 +211,7 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
         iterator = tqdm(iterator, desc="train")
 
     for epoch in iterator:
+        epochs_trained = epoch
         model.train()
         optimizer.zero_grad()
 
@@ -263,11 +267,21 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
             best_y_true = graph.y[test_mask].detach().cpu().numpy()
             best_y_pred = best_pred.detach().cpu().numpy()
             best_y_prob = best_prob.detach().cpu().numpy()
+            bad_epochs = 0
+        else:
+            bad_epochs += 1
 
         if verbose:
             iterator.set_description(
                 f"loss={loss.item():.4f} tr={train_acc:.3f} va={val_acc:.3f} te={test_acc:.3f}"
             )
+        if patience is not None and bad_epochs >= patience:
+            if verbose:
+                print(
+                    f"\nEarly stopping at epoch {epoch} "
+                    f"(best epoch {best_epoch}, patience {patience})"
+                )
+            break
 
     synchronize_if_cuda(device)
     train_time_s = time.perf_counter() - train_start
@@ -293,7 +307,7 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
         "best_val_acc": best_val_acc,
         "best_test_acc": best_test_acc,
         "best_epoch": best_epoch,
-        "epochs_trained": epochs,
+        "epochs_trained": epochs_trained,
         "train_time_s": train_time_s,
         "eval_time_s": 0.0,
         "elapsed_time_s": elapsed_time_s,

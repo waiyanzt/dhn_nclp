@@ -100,7 +100,7 @@ def aggregate(rows_for_variant):
     keys = [
         'accuracy', 'precision_macro', 'recall_macro',
         'micro_f1', 'macro_f1', 'train_time_s', 'elapsed_time_s',
-        'time_to_best_s', 'best_epoch',
+        'time_to_best_s', 'best_epoch', 'epochs_trained',
     ]
     agg = {}
     for k in keys:
@@ -167,6 +167,7 @@ def main():
                 'elapsed_time_s': run.get('elapsed_time_s', run['train_time_s']),
                 'time_to_best_s': run.get('time_to_best_s', 0.0),
                 'best_epoch': run['best_epoch'],
+                'epochs_trained': run['epochs_trained'],
                 'seed': seed,
             })
 
@@ -177,6 +178,7 @@ def main():
         'accuracy', 'precision_macro', 'recall_macro',
         'micro_f1', 'macro_f1',
         'train_time_s', 'elapsed_time_s', 'time_to_best_s', 'best_epoch',
+        'epochs_trained',
     ]
     with open(csv_path, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -196,6 +198,11 @@ def main():
                 'elapsed_time_s': fmt(agg['elapsed_time_s_mean'], agg['elapsed_time_s_std'], decimals=2),
                 'time_to_best_s': fmt(agg['time_to_best_s_mean'], agg['time_to_best_s_std'], decimals=2),
                 'best_epoch': fmt(agg['best_epoch_mean'], agg['best_epoch_std'], decimals=1),
+                'epochs_trained': fmt(
+                    agg['epochs_trained_mean'],
+                    agg['epochs_trained_std'],
+                    decimals=1,
+                ),
             })
 
     # also dump raw per-seed rows for the appendix / sanity checking
@@ -207,6 +214,7 @@ def main():
             'accuracy', 'precision_macro', 'recall_macro',
             'micro_f1', 'macro_f1',
             'train_time_s', 'elapsed_time_s', 'time_to_best_s', 'best_epoch',
+            'epochs_trained',
         ])
         for label in variants:
             for r in per_variant_rows[label]:
@@ -221,6 +229,7 @@ def main():
                     f"{r['elapsed_time_s']:.2f}",
                     f"{r['time_to_best_s']:.2f}",
                     r['best_epoch'],
+                    r['epochs_trained'],
                 ])
 
     print(f"\nWrote {csv_path}")
