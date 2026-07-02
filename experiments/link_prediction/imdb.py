@@ -218,6 +218,7 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     bad_epochs = 0
     best_epoch = 0
     time_to_best_s = 0.0
+    epochs_trained = 0
 
     train_pos = splits["train_pos"]
     train_neg = splits["train_neg"]
@@ -230,6 +231,7 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     train_start = time.perf_counter()
 
     for epoch in range(1, epochs + 1):
+        epochs_trained = epoch
         model.train()
         optimizer.zero_grad()
 
@@ -286,13 +288,15 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     metrics["time_to_best_s"] = time_to_best_s
     metrics["best_val_loss"] = best_val_loss
     metrics["best_epoch"] = best_epoch
+    metrics["epochs_trained"] = epochs_trained
 
     if verbose:
         print(f"  [seed={seed}] TEST  AUC={metrics['auc']:.4f} AP={metrics['ap']:.4f} "
               f"MRR={metrics['mrr']:.4f} H@1={metrics['hits@1']:.4f} "
               f"H@3={metrics['hits@3']:.4f} H@5={metrics['hits@5']:.4f}")
         print(f"  [seed={seed}] time train={train_time_s:.2f}s eval={eval_time_s:.2f}s "
-              f"elapsed={metrics['elapsed_time_s']:.2f}s best@={time_to_best_s:.2f}s")
+              f"elapsed={metrics['elapsed_time_s']:.2f}s best@={time_to_best_s:.2f}s "
+              f"epochs={epochs_trained}")
 
     if scores_csv_path is not None:
         write_scores_csv(
