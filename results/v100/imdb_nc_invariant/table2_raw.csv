@@ -1,0 +1,4 @@
+variant,seed,accuracy,precision_macro,recall_macro,micro_f1,macro_f1,train_time_s,elapsed_time_s,time_to_best_s,best_epoch,epochs_trained
+IMDb*,1566911444,0.5778,0.5838,0.5761,0.5778,0.5786,6.07,6.56,2.57,25,65
+IMDb*,20241017,0.6029,0.6040,0.6066,0.6029,0.5992,4.56,4.76,1.06,12,52
+IMDb*,20251017,0.5861,0.5875,0.5857,0.5861,0.5860,5.79,5.98,2.29,26,66
