@@ -22,8 +22,8 @@ Auxiliary genre nodes (added to the graph for ALL tasks):
 RGCN parity.
 
 Usage:
-    python -m preprocess.imdb.link_prediction --task md --variant v1
-    python -m preprocess.imdb.link_prediction --task ml --variant v1,v2,v3,v4
+    python -m preprocess.imdb.link_prediction --task md --variant v1,v3,universal
+    python -m preprocess.imdb.link_prediction --task ml --variant v1,v2,v3,v4,universal
 """
 from __future__ import annotations
 
@@ -43,18 +43,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dhn.graph_enumerations import (  # noqa: E402
     cycle_mapping_index,
-    path_mapping_index,
     single_node_mapping_index,
 )
 
 SEED = 1566911444
 NUM_GENRES = 3
-PATTERNS = ['p1', 'c2', 'p3']
+PATTERNS = ["p1", "c2"]
 
 PATTERN_FNS = {
-    'p1': lambda g: single_node_mapping_index(g),
-    'c2': lambda g: cycle_mapping_index(g, length_bound=2),
-    'p3': lambda g: path_mapping_index(g),
+    "p1": lambda g: single_node_mapping_index(g),
+    "c2": lambda g: cycle_mapping_index(g, length_bound=2),
 }
 
 
@@ -203,8 +201,21 @@ def build_typed_edges_md(movies, variant, train_pos, dmap, amap, labels):
                     _add(raw, "link-actor", mi, amap[row[acol]])
         for m, d in train_md:
             _add(raw, "movie-director", m, d)
+    elif variant == "universal":
+        # The md comparison contains v1 and v3 only. Their union preserves
+        # both actor routes without exposing held-out director targets.
+        for mi, row in movies.iterrows():
+            mi = int(mi)
+            _add(raw, "movie-link", mi, mi)
+            for acol in ("actor_1_name", "actor_2_name", "actor_3_name"):
+                if pd.notna(row[acol]) and row[acol] in amap:
+                    actor = amap[row[acol]]
+                    _add(raw, "movie-actor", mi, actor)
+                    _add(raw, "link-actor", mi, actor)
+        for m, d in train_md:
+            _add(raw, "movie-director", m, d)
     else:
-        raise ValueError(f"md variant must be v1 or v3, got {variant}")
+        raise ValueError(f"md variant must be v1, v3, or universal, got {variant}")
 
     # Auxiliary movie-genre edges from labels.npy (genre is not the md target).
     for mi in range(len(movies)):
@@ -256,8 +267,22 @@ def build_typed_edges_mg(movies, variant, train_pos, dmap, amap):
             _add(raw, "link-director", li, dmap[row["director_name"]])
         for m, g in train_mg:
             _add(raw, "movie-genre", m, g)
+    elif variant == "universal":
+        for mi, row in movies.iterrows():
+            mi = int(mi)
+            director = dmap[row["director_name"]]
+            _add(raw, "movie-director", mi, director)
+            _add(raw, "link-director", mi, director)
+            for acol in ("actor_1_name", "actor_2_name", "actor_3_name"):
+                if pd.notna(row[acol]) and row[acol] in amap:
+                    actor = amap[row[acol]]
+                    _add(raw, "movie-actor", mi, actor)
+                    _add(raw, "link-actor", mi, actor)
+            _add(raw, "movie-link", mi, mi)
+        for m, g in train_mg:
+            _add(raw, "movie-genre", m, g)
     else:
-        raise ValueError(f"mg variant must be v1-v4, got {variant}")
+        raise ValueError(f"mg variant must be v1-v4 or universal, got {variant}")
     return raw
 
 
@@ -297,8 +322,20 @@ def build_typed_edges_ml(movies, variant, train_pos, dmap, amap, labels):
             _add(raw, "link-director", li, dmap[row["director_name"]])
         for m, l in train_ml:
             _add(raw, "movie-link", m, l)
+    elif variant == "universal":
+        for i, row in movies.iterrows():
+            i = int(i)
+            director = dmap[row["director_name"]]
+            actor = amap[row["actor_1_name"]]
+            _add(raw, "movie-director", i, director)
+            _add(raw, "link-director", i, director)
+            _add(raw, "movie-actor", i, actor)
+            _add(raw, "link-actor", i, actor)
+            _add(raw, "movie-link", i, i)
+        for m, l in train_ml:
+            _add(raw, "movie-link", m, l)
     else:
-        raise ValueError(f"ml variant must be v1-v4, got {variant}")
+        raise ValueError(f"ml variant must be v1-v4 or universal, got {variant}")
 
     # Auxiliary movie-genre edges from labels.npy (genre is not the ml target).
     for mi in range(len(movies)):
@@ -483,6 +520,9 @@ def preprocess_one(csv_path: Path, shared_npz: Path, task: str, variant: str,
     data.batch_size = 1
 
     num_nodes_per_type = {"movie": M, "director": Dn, "actor": An, "link": M, "genre": Gn}
+    source_variants = (
+        ["v1", "v3"] if task == "md" else ["v1", "v2", "v3", "v4"]
+    )
 
     bundle = {
         "data": data,
@@ -494,6 +534,10 @@ def preprocess_one(csv_path: Path, shared_npz: Path, task: str, variant: str,
             "num_nodes_per_type": num_nodes_per_type,
             "num_nodes_total": num_nodes_total,
             "neg_k": k_eff,
+            "mapping_mode": (
+                "invariant_union_graph" if variant == "universal" else "baseline"
+            ),
+            "union_of_variants": source_variants if variant == "universal" else [],
             "kendall_keys": {
                 "md": ["movie_local", "director_local"],
                 "mg": ["movie_local", "genre_id"],
@@ -519,7 +563,11 @@ def _parse_task(s: str) -> str:
 
 def _parse_variants(s: str, task: str) -> list[str]:
     vals = [x.strip().lower() for x in str(s).split(",") if x.strip()]
-    good = {"v1", "v3"} if task == "md" else {"v1", "v2", "v3", "v4"}
+    good = (
+        {"v1", "v3", "universal"}
+        if task == "md"
+        else {"v1", "v2", "v3", "v4", "universal"}
+    )
     bad = [v for v in vals if v not in good]
     if bad:
         raise SystemExit(f"Unknown variant(s) for task={task}: {bad}; expected subset of {sorted(good)}")
@@ -530,7 +578,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="IMDB DHN-LP preprocessing (homogeneous-flat, RGCN-parity).")
     ap.add_argument("--task", type=_parse_task, required=True)
     ap.add_argument("--variant", default="v1",
-                    help="Comma-separated. md allows v1,v3; mg/ml allow v1-v4.")
+                    help="Comma-separated. md allows v1,v3,universal; "
+                         "mg/ml allow v1-v4,universal.")
     ap.add_argument("--csv", default="data/raw/IMDB/movie_metadata.csv")
     ap.add_argument("--shared-npz", default="",
                     help="Default: data/preprocessed/CMPNN/IMDB_<task>_shared_splits.npz")

@@ -3,18 +3,21 @@ device: "cuda:0"
 
 logging:
   path: ./runs/
-  experiment: imdb_nc_p1c2p3_flat
+  experiment: imdb_nc_p1c2_flat
 
 data:
   path: ./data/preprocessed/IMDB_dhn_nc.pt
 
 model:
-  # one DHN layer with three pattern kernels (P1, P2=c2, P3 = 3-node path)
-  # indim=-1 → resolved to feat_dim at runtime; outdims of 64 each → 192-dim concat
+  # Two-layer scalable DHN adaptation used by the heterogeneous benchmarks.
   layers_config:
     - p1: [-1, 64, 1]
       c2: [-1, 64, 2]
-      p3: [-1, 64, 3]
+    - p1: [-1, 64, 1]
+      c2: [-1, 64, 2]
+  homconv_kwargs:
+    mapping_chunk_size: 100000
+    checkpoint_chunks: true
   agg: null   # node classification: per-node logits, no graph-level pooling
   activation:
     name: ReLU

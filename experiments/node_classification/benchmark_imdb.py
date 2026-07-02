@@ -38,6 +38,10 @@ DEFAULT_VARIANTS = {
     'IMDb3': 'data/preprocessed/IMDB_dhn_nc_t_2.pt',
     'IMDb4': 'data/preprocessed/IMDB_dhn_nc_t_3.pt',
 }
+AVAILABLE_VARIANTS = {
+    **DEFAULT_VARIANTS,
+    'IMDb*': 'data/preprocessed/IMDB_dhn_nc_universal.pt',
+}
 
 DEFAULT_SEEDS = [1566911444, 20241017, 20251017]
 
@@ -61,8 +65,12 @@ def resolve_variants(requested):
     if requested is None:
         items = list(DEFAULT_VARIANTS.items())
     else:
-        items = [(v, DEFAULT_VARIANTS[v]) for v in requested if v in DEFAULT_VARIANTS]
-        unknown = [v for v in requested if v not in DEFAULT_VARIANTS]
+        items = [
+            (v, AVAILABLE_VARIANTS[v])
+            for v in requested
+            if v in AVAILABLE_VARIANTS
+        ]
+        unknown = [v for v in requested if v not in AVAILABLE_VARIANTS]
         if unknown:
             warnings.warn(f"Unknown variant labels (skipped): {unknown}")
     out = {}

@@ -6,11 +6,15 @@ seeds: [1566911444, 20241017, 20251017]
 model:
   # nn.Embedding(num_nodes, in_dim) since LP runs with no input features
   in_dim: 64
-  # Vanilla DHN patterns (p1, c2, p3) - swap when prof's "our version" patterns arrive
+  # Two-layer scalable DHN adaptation used by the heterogeneous benchmarks.
   layers_config:
     - p1: [-1, 64, 1]
       c2: [-1, 64, 2]
-      p3: [-1, 64, 3]
+    - p1: [-1, 64, 1]
+      c2: [-1, 64, 2]
+  homconv_kwargs:
+    mapping_chunk_size: 100000
+    checkpoint_chunks: true
   activation:
     name: ReLU
     kwargs:

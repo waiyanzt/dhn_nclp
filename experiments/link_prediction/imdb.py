@@ -187,13 +187,17 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     in_dim = config["model"]["in_dim"]
     layers_config = resolve_layers_config(config["model"]["layers_config"], in_dim)
     activation_kwargs = config["model"]["activation"].get("kwargs", {})
+    model_kwargs = {
+        **activation_kwargs,
+        **config["model"].get("homconv_kwargs", {}),
+    }
 
     model = DHN_LP(
         num_nodes=num_nodes,
         in_dim=in_dim,
         layers_config=layers_config,
         act_module=get_act_module(config["model"]["activation"]["name"]),
-        **activation_kwargs,
+        **model_kwargs,
     ).to(device)
 
     if verbose:
