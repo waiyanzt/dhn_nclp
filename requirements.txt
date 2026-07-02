@@ -9,6 +9,8 @@ torch-sparse
 torch-cluster
 networkx>=3.1
 numpy>=1.24,<2
+pandas>=2.0,<3
+scipy>=1.10
 tqdm>=4.65
 pyyaml>=6.0
 scikit-learn>=1.3

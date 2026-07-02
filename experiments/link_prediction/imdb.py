@@ -7,7 +7,7 @@ no input features (learned nn.Embedding only).
 Usage:
     python -m experiments.link_prediction.imdb --config configs/imdb_lp.yaml \\
         --bundle data/preprocessed/IMDB_dhn_lp_md_v1.pt \\
-        --out-dir data/results
+        --out-dir results/v100/imdb_lp_baseline
 """
 
 import argparse
@@ -353,7 +353,7 @@ def parse_args():
     p.add_argument("--config", type=str, default="configs/imdb_lp.yaml")
     p.add_argument("--bundle", type=str, required=True,
                    help="Path to DHN-LP bundle .pt (one per (task, variant)).")
-    p.add_argument("--out-dir", type=str, default="data/results")
+    p.add_argument("--out-dir", type=str, default="results/v100/imdb_lp_baseline")
     p.add_argument("--seeds", type=str, default="",
                    help="Override seed list (comma-separated). Default reads from config.")
     p.add_argument("--device", type=str, default="",

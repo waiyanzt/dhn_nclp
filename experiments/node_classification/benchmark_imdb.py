@@ -49,7 +49,7 @@ def parse_args():
                    help='Seeds to run per variant (default: lab-standard three seeds)')
     p.add_argument('--variants', type=str, nargs='+', default=None,
                    help='Subset of variant labels to run; default = all available')
-    p.add_argument('--out-dir', type=str, default='runs/benchmark_imdb_nc',
+    p.add_argument('--out-dir', type=str, default='results/v100/imdb_nc_baseline',
                    help='Where to write per-run artifacts and the summary CSV')
     p.add_argument('--skip-existing', action='store_true',
                    help='Skip (variant, seed) pairs whose artifact file already exists')

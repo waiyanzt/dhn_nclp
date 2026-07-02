@@ -80,7 +80,11 @@ def evaluate_test(model, data, test_pos, test_neg, offsets, hits_k, threshold):
     sn = neg_scores.detach().cpu().numpy()
     y_score = np.concatenate([sp, sn])
     y_true = np.concatenate([np.ones(len(sp)), np.zeros(len(sn))])
-    y_prob = 1.0 / (1.0 + np.exp(-y_score))
+    y_prob = np.empty_like(y_score, dtype=np.float64)
+    nonnegative = y_score >= 0
+    y_prob[nonnegative] = 1.0 / (1.0 + np.exp(-y_score[nonnegative]))
+    exp_score = np.exp(y_score[~nonnegative])
+    y_prob[~nonnegative] = exp_score / (1.0 + exp_score)
     preds = (y_prob > threshold).astype(int)
 
     metrics = {
@@ -152,9 +156,12 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     in_dim = config["model"]["in_dim"]
     layers_config = resolve_layers_config(config["model"]["layers_config"], in_dim)
     act_kwargs = config["model"]["activation"].get("kwargs", {})
+    homconv_kwargs = config["model"].get("homconv_kwargs", {})
     model = DHN_LP(
         num_nodes=meta["num_nodes_total"], in_dim=in_dim, layers_config=layers_config,
-        act_module=get_act_module(config["model"]["activation"]["name"]), **act_kwargs,
+        act_module=get_act_module(config["model"]["activation"]["name"]),
+        **act_kwargs,
+        **homconv_kwargs,
     ).to(device)
 
     opt_fn = get_optimizer(config["training"]["optimizer"]["name"])

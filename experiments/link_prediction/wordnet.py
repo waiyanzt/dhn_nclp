@@ -409,6 +409,7 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
 
     synchronize_if_cuda(device)
     train_time_s = time.perf_counter() - train_start
+    epochs_trained = epoch
 
     print(f"  [seed={seed}] Running test evaluation (filtered MRR)...", flush=True)
     synchronize_if_cuda(device)
@@ -427,6 +428,7 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
         time_to_best_s=time_to_best_s,
         best_val_loss=best_val,
         best_epoch=best_epoch,
+        epochs_trained=epochs_trained,
     )
 
     artifact_config = config.get("artifacts", {})
@@ -486,7 +488,8 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
             f"Rec={metrics['recall']:.4f} F1={metrics['f1']:.4f}"
         )
     print(f"  [seed={seed}] time train={train_time_s:.2f}s eval={eval_time_s:.2f}s "
-          f"elapsed={metrics['elapsed_time_s']:.2f}s best@={time_to_best_s:.2f}s")
+          f"elapsed={metrics['elapsed_time_s']:.2f}s best@={time_to_best_s:.2f}s "
+          f"epochs={epochs_trained}")
     return metrics
 
 
@@ -507,6 +510,7 @@ def write_kg_summary_csv(path, per_seed, hits_k):
                 "eval_time_s",
                 "elapsed_time_s",
                 "time_to_best_s",
+                "epochs_trained",
             ])
 
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)

@@ -7,8 +7,9 @@ FB15k package:
     <variant>/relations.dict
     <variant>/data.txt
 
-Unlike FB15k, WordNet p3 enumeration is tractable for these variants, so the
-default pattern set is the vanilla DHN set {p1, c2, p3}.
+The benchmark uses the same scalable two-layer {p1, c2} DHN specification as
+the other heterogeneous-graph adaptations. This avoids dataset-specific use of
+an explicitly materialized p3 mapping.
 
 Splits follow the lab protocol: validation and test triples come from the
 intersection shared by all variants, while each variant retains its additional
@@ -35,7 +36,6 @@ from torch_geometric.data import Data
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dhn.graph_enumerations import (  # noqa: E402
     cycle_mapping_index,
-    path_mapping_index,
     single_node_mapping_index,
 )
 
@@ -43,13 +43,12 @@ from dhn.graph_enumerations import (  # noqa: E402
 RAW_ROOT = "data/raw/wordnet_3hops_augmented_full"
 OUT_DIR = "data/preprocessed"
 SEED = 1566911444
-PATTERNS = ["p1", "c2", "p3"]
+PATTERNS = ["p1", "c2"]
 VALID_VARIANTS = {"no_changes", "all_inverse_edges", "transitive_edges"}
 
 PATTERN_FNS = {
     "p1": single_node_mapping_index,
     "c2": lambda g: cycle_mapping_index(g, length_bound=2),
-    "p3": path_mapping_index,
 }
 
 
@@ -93,9 +92,6 @@ def preprocess_one(raw_root: Path, shared_splits: Path, variant: str,
 
     nxg, edge_index = build_graph(train, num_entities)
     print(f"  Graph: nodes={nxg.number_of_nodes():,} undirected_edges={nxg.number_of_edges():,}")
-
-    p3_rows_est = int(sum(d * d for _, d in nxg.degree()))
-    print(f"  p3 rows estimate: {p3_rows_est:,}")
 
     print(f"  Enumerating patterns {PATTERNS}...")
     mapping_index_dict = {}

@@ -6,7 +6,8 @@ Splits: 80/10/10 stratified by relation (seed 1566911444).
 Graph: train triples only (undirected, relations collapsed) to avoid leakage.
 
 Bundle stores raw (h, r, t) integer-id triples. DistMult scorer + full
-entity-ranking eval lives in experiments.link_prediction.fb15k.
+The legacy bundle is retained for diagnostics. The new Freebase pipeline is
+implemented separately from the WordNet trainer.
 
 Usage:
     python -m preprocess.fb15k.link_prediction

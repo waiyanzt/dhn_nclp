@@ -30,7 +30,7 @@ The key components are:
 
 - `dhn/` — reusable DHN implementation: layers, models, graph enumeration, datasets, and utility builders.
 - `experiments/` — runnable training and benchmark entrypoints, grouped by task.
-  - `experiments/node_classification/` — IMDb node-classification training and benchmarking.
+  - `experiments/node_classification/` — IMDb and Freebase node-classification training and benchmarking.
   - `experiments/link_prediction/` — IMDb, DBLP, and WordNet link-prediction runners.
   - `experiments/original_graph_classification/` — original DHN graph-classification runner.
 - `preprocess/` — dataset-specific preprocessing entrypoints, grouped by dataset and task.
@@ -151,6 +151,131 @@ When evaluating a different pattern set (e.g. the prof's "our version" patterns)
 2. `configs/imdb_lp.yaml` — the kernel names under `model.layers_config`. Each kernel name must appear as a key in the bundle's `mapping_index_dict` (otherwise the kernel receives no counts and silently outputs zeros).
 
 The pattern set and the config kernels must match exactly; bundles are not portable across pattern sets.
+
+---
+
+## DBLP Invariant Link Prediction
+
+DBLP uses a two-layer `{p1, c2}` DHN. This avoids explicitly materializing all
+three-node-path homomorphisms and permits preprocessing the full eligible paper
+set. First generate the shared paper-disjoint 70/10/20 split:
+
+```bash
+python -m preprocess.dblp.shared_splits
+```
+
+The three baseline bundles retain one area attachment relation each:
+
+```text
+v1: Paper-Area
+v2: Venue-Area
+v3: Author-Area
+```
+
+Figure 3 in the lab paper defines DBLP* as the union graph containing all three
+area relation families, together with the common Paper-Author, Paper-Term, and
+train-only Paper-Venue edges. Build all baseline and invariant bundles with:
+
+```bash
+python -m preprocess.dblp.link_prediction \
+  --variant v1,v2,v3,universal \
+  --raw-dir data/raw/DBLP \
+  --shared-npz data/preprocessed/DBLP_shared_splits/DBLP_pc_shared_splits.npz \
+  --out-dir data/preprocessed
+```
+
+This writes one bundle per variant. Train the three baseline bundles into
+`results/v100/dblp_lp_baseline` and the universal bundle with the same model,
+split, seeds, loss, and hyperparameters:
+
+```bash
+for variant in v1 v2 v3; do
+  python -m experiments.link_prediction.dblp \
+    --config configs/dblp_lp.yaml \
+    --bundle "data/preprocessed/DBLP_dhn_lp_pc_${variant}.pt" \
+    --out-dir results/v100/dblp_lp_baseline
+done
+
+python -m experiments.link_prediction.dblp \
+  --config configs/dblp_lp.yaml \
+  --bundle data/preprocessed/DBLP_dhn_lp_pc_universal.pt \
+  --out-dir results/v100/dblp_lp_invariant
+```
+
+The universal bundle changes only the graph-derived `mapping_index_dict`.
+Chunked HomConv execution bounds activation memory without changing the model's
+mathematical output.
+
+---
+
+## Freebase Node Classification
+
+The Freebase benchmark predicts one of eight declared classes for labeled BOOK
+nodes (`type 0`). It follows the lab baseline preprocessing contract:
+
+- the same labeled node IDs and labels for every graph variant;
+- a stratified 60/20/20 split with seed `1566911444`;
+- forward edges interpreted as an undirected graph, equivalent to adding reverse
+  edges in the baseline loader;
+- learned 64-dimensional node embeddings, which are the scalable equivalent of
+  projecting identity features.
+
+The baseline variants are `unchanged`, `exact_2`, and `exact_3`. Freebase
+`exact_2` already has approximately 49.8 billion target-rooted `p3` mappings,
+so all Freebase NC variants consistently use the tractable DHN pattern set
+`{p1, c2}`. Bundles record this choice in `meta`. Preprocessing defaults to
+`unchanged` and `exact_2`; run `exact_3` separately because its 34 GB edge file
+may exceed even the guarded `c2` mapping limit.
+
+### Preprocess
+
+```bash
+python -m preprocess.freebase.node_classification \
+  --variants unchanged exact_2 \
+  --raw-root data/raw/dataset_variant_3hops_filter \
+  --out-dir data/preprocessed
+```
+
+Expected outputs:
+
+```text
+data/preprocessed/Freebase_dhn_nc_unchanged.pt
+data/preprocessed/Freebase_dhn_nc_exact_2.pt
+```
+
+Preflight/materialize `exact_3` separately. The command aborts instead of
+sampling or truncating if it exceeds 20 million unique rooted `c2` mappings:
+
+```bash
+python -m preprocess.freebase.node_classification \
+  --variants exact_3 \
+  --raw-root data/raw/dataset_variant_3hops_filter \
+  --out-dir data/preprocessed
+```
+
+Only mappings rooted at the 7,954 labeled BOOK nodes are stored. For this
+one-layer DHN, that produces the same supervised-node outputs as full-graph
+enumeration while avoiding mappings rooted at nodes that never enter the loss.
+
+### Train
+
+```bash
+python -m experiments.node_classification.benchmark_freebase \
+  --config configs/freebase_nc.yaml \
+  --out-dir results/v100/freebase_nc_baseline
+```
+
+The benchmark runs seeds `1566911444`, `20241017`, and `20251017`. It writes
+per-seed prediction artifacts plus:
+
+```text
+results/v100/freebase_nc_baseline/freebase_nc_raw.csv
+results/v100/freebase_nc_baseline/freebase_nc_summary.csv
+```
+
+The summary contains accuracy, macro precision/recall, micro-F1, macro-F1,
+training time, elapsed time, time to best validation checkpoint, best epoch,
+and total epochs trained.
 
 ---
 
