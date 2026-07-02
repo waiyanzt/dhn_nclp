@@ -6,6 +6,7 @@ import time
 
 import numpy as np
 import torch
+import torch.nn as nn
 import yaml
 from tqdm import tqdm
 
@@ -74,6 +75,24 @@ def resolve_layers_config(layers_config, feat_dim):
     return out
 
 
+class FeaturelessDHNNodeClassifier(nn.Module):
+    """DHN node classifier backed by a learned embedding for every node."""
+
+    def __init__(self, num_nodes, embedding_dim, **dhn_kwargs):
+        super().__init__()
+        self.node_embedding = nn.Embedding(num_nodes, embedding_dim)
+        nn.init.xavier_uniform_(self.node_embedding.weight)
+        self.backbone = DHN(**dhn_kwargs)
+
+    def forward(self, graph):
+        previous_x = graph.x
+        graph.x = self.node_embedding.weight
+        try:
+            return self.backbone(graph)
+        finally:
+            graph.x = previous_x
+
+
 @torch.no_grad()
 def evaluate(model, graph, mask, criterion):
     model.eval()
@@ -130,14 +149,23 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
 
     layers_config = resolve_layers_config(config["model"]["layers_config"], feat_dim)
     activation_kwargs = config["model"]["activation"].get("kwargs", {})
-
-    model = DHN(
+    homconv_kwargs = config["model"].get("homconv_kwargs", {})
+    dhn_kwargs = dict(
         out_dim=num_classes,
         layers_config=layers_config,
         act_module=get_act_module(config["model"]["activation"]["name"]),
         agg=config["model"]["agg"],
         **activation_kwargs,
-    ).to(device)
+        **homconv_kwargs,
+    )
+    if config["model"].get("learned_node_embeddings", False):
+        model = FeaturelessDHNNodeClassifier(
+            num_nodes=graph.num_nodes,
+            embedding_dim=feat_dim,
+            **dhn_kwargs,
+        ).to(device)
+    else:
+        model = DHN(**dhn_kwargs).to(device)
 
     if verbose:
         print(model)
@@ -164,7 +192,7 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
     val_mask = graph.val_mask
     test_mask = graph.test_mask
 
-    best_val_acc = 0.0
+    best_val_acc = float("-inf")
     best_test_acc = 0.0
     best_epoch = 0
     best_y_true = None
@@ -196,8 +224,23 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
                 (out[train_mask].argmax(1) == graph.y[train_mask]).float().mean().item()
             )
 
-        val_acc, val_loss = evaluate(model, graph, val_mask, criterion)
-        test_acc, test_loss = evaluate(model, graph, test_mask, criterion)
+        model.eval()
+        with torch.no_grad():
+            eval_out = model(graph)
+            val_loss = criterion(eval_out[val_mask], graph.y[val_mask]).item()
+            test_loss = criterion(eval_out[test_mask], graph.y[test_mask]).item()
+            val_acc = (
+                (eval_out[val_mask].argmax(1) == graph.y[val_mask])
+                .float()
+                .mean()
+                .item()
+            )
+            test_acc = (
+                (eval_out[test_mask].argmax(1) == graph.y[test_mask])
+                .float()
+                .mean()
+                .item()
+            )
 
         if logger is not None:
             logger.add_scalar("loss/train", loss.item(), epoch)
@@ -214,15 +257,12 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
             synchronize_if_cuda(device)
             time_to_best_s = time.perf_counter() - train_start
 
-            model.eval()
-            with torch.no_grad():
-                best_out = model(graph)
-                best_prob = torch.softmax(best_out[test_mask], dim=1)
-                best_pred = best_prob.argmax(dim=1)
+            best_prob = torch.softmax(eval_out[test_mask], dim=1)
+            best_pred = best_prob.argmax(dim=1)
 
-                best_y_true = graph.y[test_mask].detach().cpu().numpy()
-                best_y_pred = best_pred.detach().cpu().numpy()
-                best_y_prob = best_prob.detach().cpu().numpy()
+            best_y_true = graph.y[test_mask].detach().cpu().numpy()
+            best_y_pred = best_pred.detach().cpu().numpy()
+            best_y_prob = best_prob.detach().cpu().numpy()
 
         if verbose:
             iterator.set_description(
@@ -253,6 +293,7 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
         "best_val_acc": best_val_acc,
         "best_test_acc": best_test_acc,
         "best_epoch": best_epoch,
+        "epochs_trained": epochs,
         "train_time_s": train_time_s,
         "eval_time_s": 0.0,
         "elapsed_time_s": elapsed_time_s,
