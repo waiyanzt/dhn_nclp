@@ -208,6 +208,105 @@ mathematical output.
 
 ---
 
+## IMDb Node Classification
+
+IMDb node classification predicts Action, Comedy, or Drama for 4,180 movie
+nodes. IMDb1-IMDb4 share identical node IDs, features, labels, and the
+deterministic seed-`1566911444` 70/10/20 split. IMDb* is the boolean union of
+the four baseline adjacencies; the supervision and model configuration remain
+unchanged.
+
+On a fresh HPC checkout, first package the tracked intermediate artifacts into
+the five DHN bundles:
+
+```bash
+python -m preprocess.imdb.node_classification \
+  --variant v1,v2,v3,v4,universal
+```
+
+Verify the complete benchmark matrix without starting training:
+
+```bash
+python -m experiments.node_classification.benchmark_imdb \
+  --preflight-only
+```
+
+Run all five variants over the lab-standard three seeds:
+
+```bash
+python -m experiments.node_classification.benchmark_imdb \
+  --preflight \
+  --out-dir results/v100/imdb_nc_baseline
+```
+
+For an incremental universal rerun that reuses existing IMDb1-IMDb4 seed
+artifacts:
+
+```bash
+python -m experiments.node_classification.benchmark_imdb \
+  --skip-existing \
+  --out-dir results/v100/imdb_nc_baseline
+```
+
+The universal result directory is named `IMDb_universal` (rather than using an
+asterisk in a filesystem path), while CSV rows retain the paper label `IMDb*`.
+Missing bundles fail the sweep by default; `--allow-missing` is available only
+for intentional partial runs.
+
+### Joint IMDb data augmentation
+
+The standalone benchmark above trains a separate model per graph. The joint
+augmentation runner instead shares one DHN, optimizer, and checkpoint across
+IMDb1-IMDb4. It retains the DHN architecture, loss, optimizer, and chunking
+settings from `configs/imdb_nc.yaml`, while matching the RGCN augmentation
+schedule:
+
+- one super-epoch visits v1, v2, v3, and v4 once in seeded random order;
+- every visit performs one full-batch optimizer update;
+- checkpoint selection maximizes mean validation Macro-F1 across all variants;
+- test metrics and aligned score tables are written separately per variant;
+- pairwise score/prediction invariance is measured from the shared checkpoint;
+- the latest super-epoch state supports exact `--resume`;
+- per-seed JSON and the aggregate `seed_summary.csv` report checkpoint/model
+  bytes, process peak RSS, and train/inference CUDA allocated/reserved peaks.
+
+Build the four baseline bundles, then validate their shared feature,
+supervision, and pattern contract:
+
+```bash
+python -m preprocess.imdb.node_classification --variant v1,v2,v3,v4
+
+python -m experiments.node_classification.imdb_augmentation \
+  --config configs/imdb_nc.yaml \
+  --preflight-only
+```
+
+Run the lab-standard three seeds:
+
+```bash
+python -m experiments.node_classification.imdb_augmentation \
+  --config configs/imdb_nc.yaml \
+  --variants v1,v2,v3,v4 \
+  --output-dir results/dhn_augmentation/IMDB
+```
+
+Resume an interrupted run with the identical configuration:
+
+```bash
+python -m experiments.node_classification.imdb_augmentation \
+  --config configs/imdb_nc.yaml \
+  --variants v1,v2,v3,v4 \
+  --output-dir results/dhn_augmentation/IMDB \
+  --resume
+```
+
+Each `seed_<seed>/` directory contains `shared_checkpoint.pt`,
+`latest_training_state.pt`, `training_history.csv`, per-variant test scores and
+metrics, `pairwise_invariance.csv`, and `summary.json`. The output root contains
+`seed_summary.csv` and `all_seed_summaries.json`.
+
+---
+
 ## Freebase Node Classification
 
 The Freebase benchmark predicts one of eight declared classes for labeled BOOK

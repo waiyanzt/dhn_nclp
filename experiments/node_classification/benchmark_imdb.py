@@ -7,8 +7,15 @@ For each (variant, seed) it:
     3. Aggregates accuracy / precision / recall / micro-F1 / macro-F1
        (mean ± std across seeds) into a Table 2 CSV.
 
-Variants whose data bundle does not yet exist are skipped with a warning,
-so this can be re-run incrementally as new IMDb variants get preprocessed.
+IMDb1-IMDb4 and the universal IMDb* mapping are benchmarked by default. Missing
+bundles are treated as an error unless ``--allow-missing`` is supplied, so an
+HPC sweep cannot silently produce an incomplete comparison.
+
+HPC setup:
+    python -m preprocess.imdb.node_classification \
+      --variant v1,v2,v3,v4,universal
+    python -m experiments.node_classification.benchmark_imdb \
+      --skip-existing --preflight
 """
 import argparse
 import csv
@@ -37,10 +44,14 @@ DEFAULT_VARIANTS = {
     'IMDb2': 'data/preprocessed/IMDB_dhn_nc_t.pt',
     'IMDb3': 'data/preprocessed/IMDB_dhn_nc_t_2.pt',
     'IMDb4': 'data/preprocessed/IMDB_dhn_nc_t_3.pt',
-}
-AVAILABLE_VARIANTS = {
-    **DEFAULT_VARIANTS,
     'IMDb*': 'data/preprocessed/IMDB_dhn_nc_universal.pt',
+}
+VARIANT_DIR_NAMES = {
+    'IMDb1': 'IMDb1',
+    'IMDb2': 'IMDb2',
+    'IMDb3': 'IMDb3',
+    'IMDb4': 'IMDb4',
+    'IMDb*': 'IMDb_universal',
 }
 
 DEFAULT_SEEDS = [1566911444, 20241017, 20251017]
@@ -57,29 +68,74 @@ def parse_args():
                    help='Where to write per-run artifacts and the summary CSV')
     p.add_argument('--skip-existing', action='store_true',
                    help='Skip (variant, seed) pairs whose artifact file already exists')
+    p.add_argument(
+        '--allow-missing',
+        action='store_true',
+        help='Warn and skip missing bundles instead of failing the sweep.',
+    )
+    p.add_argument(
+        '--preflight',
+        action='store_true',
+        help='Print the resolved benchmark matrix before training.',
+    )
+    p.add_argument(
+        '--preflight-only',
+        action='store_true',
+        help='Validate bundle availability, print the matrix, and exit.',
+    )
+    p.add_argument(
+        '--device',
+        default=None,
+        help='Override config device, e.g. cuda:0 or cpu.',
+    )
     return p.parse_args()
 
 
-def resolve_variants(requested):
-    """Return {label: path} for variants whose bundle file exists. Warn for missing."""
+def resolve_variants(requested, allow_missing=False):
+    """Resolve requested bundles, failing by default on an incomplete matrix."""
     if requested is None:
         items = list(DEFAULT_VARIANTS.items())
     else:
-        items = [
-            (v, AVAILABLE_VARIANTS[v])
-            for v in requested
-            if v in AVAILABLE_VARIANTS
-        ]
-        unknown = [v for v in requested if v not in AVAILABLE_VARIANTS]
+        unknown = [v for v in requested if v not in DEFAULT_VARIANTS]
         if unknown:
-            warnings.warn(f"Unknown variant labels (skipped): {unknown}")
+            raise SystemExit(
+                f"Unknown variant labels: {unknown}. "
+                f"Expected a subset of {list(DEFAULT_VARIANTS)}"
+            )
+        items = [(v, DEFAULT_VARIANTS[v]) for v in requested]
+
     out = {}
+    missing = []
     for label, path in items:
         if os.path.exists(path):
             out[label] = path
         else:
-            warnings.warn(f"Variant {label}: bundle not found at {path}; skipping")
+            missing.append((label, path))
+    if missing and not allow_missing:
+        details = "\n".join(
+            f"  {label}: {path}" for label, path in missing
+        )
+        raise SystemExit(
+            "Missing required IMDb benchmark bundles:\n"
+            f"{details}\n"
+            "Generate them with:\n"
+            "  python -m preprocess.imdb.node_classification "
+            "--variant v1,v2,v3,v4,universal"
+        )
+    for label, path in missing:
+        warnings.warn(f"Variant {label}: bundle not found at {path}; skipping")
     return out
+
+
+def print_preflight(variants, seeds, out_dir, device):
+    print("IMDb DHN node-classification benchmark")
+    print(f"  device:   {device}")
+    print(f"  seeds:    {seeds}")
+    print(f"  out dir:  {out_dir}")
+    print("  variants:")
+    for label, path in variants.items():
+        size_mb = os.path.getsize(path) / (1024 ** 2)
+        print(f"    {label:6} {path} ({size_mb:.1f} MiB)")
 
 
 def metrics_from_run(run, average='macro'):
@@ -117,11 +173,23 @@ def fmt(mean, std, decimals=4):
 def main():
     args = parse_args()
     config = load_config(args.config)
+    if args.device is not None:
+        config["device"] = args.device
 
-    variants = resolve_variants(args.variants)
+    variants = resolve_variants(args.variants, allow_missing=args.allow_missing)
     if not variants:
         print("No variants available — preprocess at least one bundle first.")
         sys.exit(1)
+
+    if args.preflight or args.preflight_only:
+        print_preflight(
+            variants,
+            args.seeds,
+            args.out_dir,
+            config["device"],
+        )
+    if args.preflight_only:
+        return
 
     os.makedirs(args.out_dir, exist_ok=True)
     print(f"Variants:  {list(variants.keys())}")
@@ -132,7 +200,7 @@ def main():
     per_variant_rows = {label: [] for label in variants}
 
     for label, data_path in variants.items():
-        variant_dir = os.path.join(args.out_dir, label)
+        variant_dir = os.path.join(args.out_dir, VARIANT_DIR_NAMES[label])
         os.makedirs(variant_dir, exist_ok=True)
 
         for seed in args.seeds:
@@ -141,7 +209,7 @@ def main():
 
             if args.skip_existing and os.path.exists(run_path):
                 print(f"[{label} seed={seed}] cached, loading {run_path}")
-                run = torch.load(run_path)
+                run = torch.load(run_path, weights_only=False)
             else:
                 print(f"\n[{label} seed={seed}] training (data={data_path})")
                 cfg = deepcopy(config)
