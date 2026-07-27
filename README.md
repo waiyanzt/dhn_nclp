@@ -117,6 +117,14 @@ Timing contract for new benchmark runs:
 
 For lab comparisons, use `train_time_s` plus final metrics as the headline efficiency measure. Use `elapsed_time_s` when comparing full pipeline cost, and do not include preprocessing/enumeration time unless the experiment explicitly studies preprocessing cost.
 
+Standalone DHN node-classification and link-prediction runs also append the
+same resource fields used by the augmentation experiments. Their raw and
+summary outputs include model/checkpoint bytes, peak process RSS, and separate
+training/inference CUDA allocated, reserved, peak-allocated, and peak-reserved
+bytes. These are PyTorch allocator measurements, not whole-device utilization
+percentages. Rerun cached node-classification seeds to populate these fields;
+artifacts created by older code cannot recover historical peak memory.
+
 ```bash
 for task in md mg ml; do
   case $task in
@@ -337,17 +345,47 @@ Run all five variants over the lab-standard three seeds:
 ```bash
 python -m experiments.node_classification.benchmark_imdb \
   --preflight \
-  --out-dir results/v100/imdb_nc_baseline
+  --out-dir results/v100/imdb_nc_baseline_retrain
 ```
 
-For an incremental universal rerun that reuses existing IMDb1-IMDb4 seed
-artifacts:
+This is one command, but it is still the baseline protocol: every
+`(variant, seed)` gets its own independently initialized model, optimizer, best
+checkpoint, and resource measurements. After those independent runs finish for
+a seed, the driver also averages the aligned raw test logits from IMDb1-IMDb4.
+IMDb* is trained and reported as a baseline but is not included in the default
+fusion. Use `--fusion-variants` to select another ensemble or
+`--no-output-fusion` to disable fusion.
+
+The baseline CSVs are written at the output root. Output-fusion results are
+written under:
+
+```text
+results/v100/imdb_nc_baseline_retrain/output_fusion/
+  seed_summary.csv
+  output_fusion_raw.csv
+  output_fusion_summary.csv
+  fusion_vs_variant.csv
+  output_fusion_manifest.json
+  output_fusion_seed<seed>.npz
+```
+
+Each variant directory also contains `seed<seed>.pt` (predictions, aligned
+logits, and telemetry) and `best_model_seed<seed>.pt`. The fusion memory report
+sums checkpoint/model footprint across its constituent models and takes the
+maximum runtime peak for sequential constituent execution. It does not claim a
+joint fusion-training peak because output fusion has no joint training phase.
+
+For an incremental rerun that reuses only current-format artifacts:
 
 ```bash
 python -m experiments.node_classification.benchmark_imdb \
   --skip-existing \
-  --out-dir results/v100/imdb_nc_baseline
+  --out-dir results/v100/imdb_nc_baseline_retrain
 ```
+
+Legacy cached artifacts missing aligned logits, checkpoints, or telemetry are
+detected and retrained. Omit `--skip-existing` to deliberately retrain every
+baseline from scratch.
 
 The universal result directory is named `IMDb_universal` (rather than using an
 asterisk in a filesystem path), while CSV rows retain the paper label `IMDb*`.
@@ -462,20 +500,29 @@ enumeration while avoiding mappings rooted at nodes that never enter the loss.
 ```bash
 python -m experiments.node_classification.benchmark_freebase \
   --config configs/freebase_nc.yaml \
-  --out-dir results/v100/freebase_nc_baseline
+  --out-dir results/v100/freebase_nc_baseline_retrain
 ```
 
 The benchmark runs seeds `1566911444`, `20241017`, and `20251017`. It writes
-per-seed prediction artifacts plus:
+independent per-seed checkpoints, aligned logits, prediction artifacts,
+resource telemetry, and:
 
 ```text
-results/v100/freebase_nc_baseline/freebase_nc_raw.csv
-results/v100/freebase_nc_baseline/freebase_nc_summary.csv
+results/v100/freebase_nc_baseline_retrain/freebase_nc_raw.csv
+results/v100/freebase_nc_baseline_retrain/freebase_nc_summary.csv
+results/v100/freebase_nc_baseline_retrain/output_fusion/output_fusion_raw.csv
+results/v100/freebase_nc_baseline_retrain/output_fusion/output_fusion_summary.csv
 ```
+
+The default Freebase output fusion averages `No Changes` and `Exact 2-Hop`,
+matching the reference output-fusion experiment. `Exact 3-Hop`, when available,
+remains an independently reported baseline but is excluded from that default
+ensemble.
 
 The summary contains accuracy, macro precision/recall, micro-F1, macro-F1,
 training time, elapsed time, time to best validation checkpoint, best epoch,
-and total epochs trained.
+total epochs trained, CPU peak RSS, model/checkpoint sizes, and training and
+inference CUDA allocated/reserved peaks.
 
 ---
 

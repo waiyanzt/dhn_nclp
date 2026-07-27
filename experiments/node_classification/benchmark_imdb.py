@@ -23,6 +23,7 @@ import os
 import sys
 import warnings
 from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -34,6 +35,11 @@ from sklearn.metrics import (
     recall_score,
 )
 
+from dhn.augmentation_utils import RESOURCE_METRIC_KEYS, atomic_torch_save
+from experiments.node_classification.output_fusion import (
+    cached_artifact_missing_fields,
+    write_output_fusion_results,
+)
 from experiments.node_classification.train import load_config, run_once
 
 
@@ -55,6 +61,7 @@ VARIANT_DIR_NAMES = {
 }
 
 DEFAULT_SEEDS = [1566911444, 20241017, 20251017]
+DEFAULT_FUSION_VARIANTS = ['IMDb1', 'IMDb2', 'IMDb3', 'IMDb4']
 
 
 def parse_args():
@@ -87,6 +94,17 @@ def parse_args():
         '--device',
         default=None,
         help='Override config device, e.g. cuda:0 or cpu.',
+    )
+    p.add_argument(
+        '--fusion-variants',
+        nargs='+',
+        default=None,
+        help='Independent baselines to average; default is IMDb1-IMDb4.',
+    )
+    p.add_argument(
+        '--no-output-fusion',
+        action='store_true',
+        help='Disable post-hoc averaged-logit output fusion.',
     )
     return p.parse_args()
 
@@ -157,6 +175,7 @@ def aggregate(rows_for_variant):
         'accuracy', 'precision_macro', 'recall_macro',
         'micro_f1', 'macro_f1', 'train_time_s', 'elapsed_time_s',
         'time_to_best_s', 'best_epoch', 'epochs_trained',
+        *RESOURCE_METRIC_KEYS,
     ]
     agg = {}
     for k in keys:
@@ -198,6 +217,7 @@ def main():
 
     # Per-variant rows accumulate across seeds, then we aggregate at the end.
     per_variant_rows = {label: [] for label in variants}
+    runs_by_seed = {seed: {} for seed in args.seeds}
 
     for label, data_path in variants.items():
         variant_dir = os.path.join(args.out_dir, VARIANT_DIR_NAMES[label])
@@ -205,12 +225,28 @@ def main():
 
         for seed in args.seeds:
             run_path = os.path.join(variant_dir, f'seed{seed}.pt')
+            checkpoint_path = os.path.join(
+                variant_dir, f'best_model_seed{seed}.pt'
+            )
             tb_logdir = os.path.join(variant_dir, f'tb_seed{seed}')
 
-            if args.skip_existing and os.path.exists(run_path):
-                print(f"[{label} seed={seed}] cached, loading {run_path}")
+            use_cached = args.skip_existing and os.path.exists(run_path)
+            if use_cached:
                 run = torch.load(run_path, weights_only=False)
-            else:
+                stale_fields = cached_artifact_missing_fields(
+                    run, Path(checkpoint_path)
+                )
+                if stale_fields:
+                    print(
+                        f"[{label} seed={seed}] cached artifact is missing "
+                        f"{stale_fields}; retraining"
+                    )
+                    use_cached = False
+                else:
+                    print(
+                        f"[{label} seed={seed}] cached, loading {run_path}"
+                    )
+            if not use_cached:
                 print(f"\n[{label} seed={seed}] training (data={data_path})")
                 cfg = deepcopy(config)
                 run = run_once(
@@ -219,9 +255,10 @@ def main():
                     data_path=data_path,
                     logdir=tb_logdir,
                     verbose=False,
+                    checkpoint_path=checkpoint_path,
                 )
                 # tensors-to-arrays already done inside run_once; safe to torch.save
-                torch.save(run, run_path)
+                atomic_torch_save(run, Path(run_path))
                 print(f"  best_val={run['best_val_acc']:.4f} "
                       f"test@best={run['best_test_acc']:.4f} "
                       f"epoch={run['best_epoch']} "
@@ -229,6 +266,7 @@ def main():
                       f"elapsed={run.get('elapsed_time_s', run['train_time_s']):.1f}s")
 
             metrics = metrics_from_run(run)
+            runs_by_seed[seed][label] = run
             per_variant_rows[label].append({
                 **metrics,
                 'train_time_s': run['train_time_s'],
@@ -237,6 +275,10 @@ def main():
                 'best_epoch': run['best_epoch'],
                 'epochs_trained': run['epochs_trained'],
                 'seed': seed,
+                **{
+                    key: run.get(key, float("nan"))
+                    for key in RESOURCE_METRIC_KEYS
+                },
             })
 
     # --- write Table 2 CSV ---------------------------------------------------
@@ -247,6 +289,7 @@ def main():
         'micro_f1', 'macro_f1',
         'train_time_s', 'elapsed_time_s', 'time_to_best_s', 'best_epoch',
         'epochs_trained',
+        *RESOURCE_METRIC_KEYS,
     ]
     with open(csv_path, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -271,6 +314,14 @@ def main():
                     agg['epochs_trained_std'],
                     decimals=1,
                 ),
+                **{
+                    key: fmt(
+                        agg[f'{key}_mean'],
+                        agg[f'{key}_std'],
+                        decimals=0,
+                    )
+                    for key in RESOURCE_METRIC_KEYS
+                },
             })
 
     # also dump raw per-seed rows for the appendix / sanity checking
@@ -283,6 +334,7 @@ def main():
             'micro_f1', 'macro_f1',
             'train_time_s', 'elapsed_time_s', 'time_to_best_s', 'best_epoch',
             'epochs_trained',
+            *RESOURCE_METRIC_KEYS,
         ])
         for label in variants:
             for r in per_variant_rows[label]:
@@ -298,12 +350,47 @@ def main():
                     f"{r['time_to_best_s']:.2f}",
                     r['best_epoch'],
                     r['epochs_trained'],
+                    *[
+                        f"{r[key]:.0f}"
+                        for key in RESOURCE_METRIC_KEYS
+                    ],
                 ])
 
     print(f"\nWrote {csv_path}")
     print(f"Wrote {raw_path}")
-    print("Per-run artifacts (y_true / y_pred / y_prob) saved per (variant, seed); "
-          "reuse them for Table 3 (kendall-tau) once the definition is settled.")
+    if not args.no_output_fusion:
+        fusion_variants = (
+            args.fusion_variants
+            if args.fusion_variants is not None
+            else [
+                variant
+                for variant in DEFAULT_FUSION_VARIANTS
+                if variant in variants
+            ]
+        )
+        unavailable = [
+            variant for variant in fusion_variants if variant not in variants
+        ]
+        if unavailable:
+            raise SystemExit(
+                f"Fusion variants were not trained: {unavailable}"
+            )
+        if len(fusion_variants) < 2:
+            raise SystemExit(
+                "Output fusion needs at least two trained variants; select "
+                "more variants or pass --no-output-fusion."
+            )
+        fusion_dir = Path(args.out_dir) / "output_fusion"
+        write_output_fusion_results(
+            fusion_dir,
+            fusion_variants,
+            runs_by_seed,
+        )
+        print(f"Wrote output-fusion artifacts under {fusion_dir}")
+    print(
+        "Per-run labels, predictions, probabilities, aligned logits, telemetry, "
+        "and best checkpoints were saved per (variant, seed)."
+    )
 
 
 if __name__ == '__main__':

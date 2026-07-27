@@ -6,11 +6,17 @@ import csv
 import os
 import warnings
 from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 import torch
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
+from dhn.augmentation_utils import RESOURCE_METRIC_KEYS, atomic_torch_save
+from experiments.node_classification.output_fusion import (
+    cached_artifact_missing_fields,
+    write_output_fusion_results,
+)
 from experiments.node_classification.train import load_config, run_once
 
 
@@ -20,6 +26,7 @@ DEFAULT_VARIANTS = {
     "Exact 3-Hop": "data/preprocessed/Freebase_dhn_nc_exact_3.pt",
 }
 DEFAULT_SEEDS = [1566911444, 20241017, 20251017]
+DEFAULT_FUSION_VARIANTS = ["No Changes", "Exact 2-Hop"]
 METRIC_KEYS = [
     "accuracy",
     "precision_macro",
@@ -31,6 +38,7 @@ METRIC_KEYS = [
     "time_to_best_s",
     "best_epoch",
     "epochs_trained",
+    *RESOURCE_METRIC_KEYS,
 ]
 
 
@@ -43,6 +51,17 @@ def parse_args():
         "--out-dir", default="results/v100/freebase_nc_baseline"
     )
     parser.add_argument("--skip-existing", action="store_true")
+    parser.add_argument(
+        "--fusion-variants",
+        nargs="+",
+        default=None,
+        help="Independent baselines to average; default: No Changes + Exact 2-Hop",
+    )
+    parser.add_argument(
+        "--no-output-fusion",
+        action="store_true",
+        help="Disable post-hoc averaged-logit output fusion",
+    )
     return parser.parse_args()
 
 
@@ -104,6 +123,7 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
     all_rows = {}
+    runs_by_seed = {seed: {} for seed in args.seeds}
     for variant, bundle_path in variants.items():
         variant_dir = os.path.join(
             args.out_dir, variant.lower().replace(" ", "_").replace("-", "")
@@ -113,18 +133,35 @@ def main():
 
         for seed in args.seeds:
             artifact_path = os.path.join(variant_dir, f"seed{seed}.pt")
-            if args.skip_existing and os.path.isfile(artifact_path):
+            checkpoint_path = os.path.join(
+                variant_dir, f"best_model_seed{seed}.pt"
+            )
+            use_cached = args.skip_existing and os.path.isfile(artifact_path)
+            if use_cached:
                 run = torch.load(artifact_path, weights_only=False)
-                print(f"[{variant} seed={seed}] loaded {artifact_path}")
-            else:
+                stale_fields = cached_artifact_missing_fields(
+                    run, Path(checkpoint_path)
+                )
+                if stale_fields:
+                    print(
+                        f"[{variant} seed={seed}] cached artifact is missing "
+                        f"{stale_fields}; retraining"
+                    )
+                    use_cached = False
+                else:
+                    print(
+                        f"[{variant} seed={seed}] loaded {artifact_path}"
+                    )
+            if not use_cached:
                 run = run_once(
                     deepcopy(config),
                     seed=seed,
                     data_path=bundle_path,
                     logdir=os.path.join(variant_dir, f"tb_seed{seed}"),
                     verbose=False,
+                    checkpoint_path=checkpoint_path,
                 )
-                torch.save(run, artifact_path)
+                atomic_torch_save(run, Path(artifact_path))
                 print(
                     f"[{variant} seed={seed}] "
                     f"best_val={run['best_val_acc']:.4f} "
@@ -132,6 +169,7 @@ def main():
                     f"train={run['train_time_s']:.2f}s"
                 )
 
+            runs_by_seed[seed][variant] = run
             rows.append(
                 {
                     "variant": variant,
@@ -142,6 +180,10 @@ def main():
                     "time_to_best_s": run["time_to_best_s"],
                     "best_epoch": run["best_epoch"],
                     "epochs_trained": run["epochs_trained"],
+                    **{
+                        key: run.get(key, float("nan"))
+                        for key in RESOURCE_METRIC_KEYS
+                    },
                 }
             )
         all_rows[variant] = rows
@@ -162,12 +204,49 @@ def main():
             stats = aggregate(rows)
             output = {"variant": variant, "n_seeds": len(rows)}
             for key, (mean, std) in stats.items():
-                decimals = 2 if key.endswith("_s") else (1 if "epoch" in key else 4)
+                decimals = (
+                    0
+                    if key in RESOURCE_METRIC_KEYS
+                    else 2
+                    if key.endswith("_s")
+                    else 1
+                    if "epoch" in key
+                    else 4
+                )
                 output[key] = formatted(mean, std, decimals)
             writer.writerow(output)
 
     print(f"Wrote {raw_path}")
     print(f"Wrote {summary_path}")
+    if not args.no_output_fusion:
+        fusion_variants = (
+            args.fusion_variants
+            if args.fusion_variants is not None
+            else [
+                variant
+                for variant in DEFAULT_FUSION_VARIANTS
+                if variant in variants
+            ]
+        )
+        unavailable = [
+            variant for variant in fusion_variants if variant not in variants
+        ]
+        if unavailable:
+            raise SystemExit(
+                f"Fusion variants were not trained: {unavailable}"
+            )
+        if len(fusion_variants) < 2:
+            raise SystemExit(
+                "Output fusion needs at least two trained variants; select "
+                "more variants or pass --no-output-fusion."
+            )
+        fusion_dir = Path(args.out_dir) / "output_fusion"
+        write_output_fusion_results(
+            fusion_dir,
+            fusion_variants,
+            runs_by_seed,
+        )
+        print(f"Wrote output-fusion artifacts under {fusion_dir}")
 
 
 if __name__ == "__main__":

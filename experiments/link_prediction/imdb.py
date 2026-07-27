@@ -29,6 +29,12 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from dhn.augmentation_utils import (
+    cuda_memory_stats,
+    flat_resource_metrics,
+    process_peak_rss_bytes,
+    reset_cuda_peak,
+)
 from dhn.models import DHN
 from dhn.utils import get_act_module, get_optimizer
 
@@ -228,6 +234,8 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     test_neg = splits["test_neg"]
 
     synchronize_if_cuda(device)
+    runtime_device = torch.device(device)
+    reset_cuda_peak(runtime_device)
     train_start = time.perf_counter()
 
     for epoch in range(1, epochs + 1):
@@ -267,15 +275,21 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
 
     synchronize_if_cuda(device)
     train_time_s = time.perf_counter() - train_start
+    training_gpu = cuda_memory_stats(runtime_device)
 
     if best_state is not None:
         model.load_state_dict(best_state)
+        del best_state
 
+    # encode() assigns a generated embedding tensor to graph.x.
+    data.x = None
+    reset_cuda_peak(runtime_device)
     synchronize_if_cuda(device)
     eval_start = time.perf_counter()
     test_sp, test_sn = evaluate_split(model, data, test_pos, test_neg)
     synchronize_if_cuda(device)
     eval_time_s = time.perf_counter() - eval_start
+    inference_gpu = cuda_memory_stats(runtime_device)
     metrics = compute_metrics(
         test_sp, test_sn,
         hits_k=tuple(config["eval"]["hits_k"]),
@@ -304,6 +318,15 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
             offsets, meta["task"],
         )
 
+    metrics.update(
+        flat_resource_metrics(
+            model,
+            training_gpu=training_gpu,
+            inference_gpu=inference_gpu,
+            checkpoint_path=None,
+            peak_rss_bytes=process_peak_rss_bytes(),
+        )
+    )
     return metrics
 
 

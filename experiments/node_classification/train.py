@@ -10,6 +10,13 @@ import torch.nn as nn
 import yaml
 from tqdm import tqdm
 
+from dhn.augmentation_utils import (
+    atomic_torch_save,
+    cuda_memory_stats,
+    flat_resource_metrics,
+    process_peak_rss_bytes,
+    reset_cuda_peak,
+)
 from dhn.datasets import NodeClassDataset
 from dhn.models import DHN
 from dhn.utils import (
@@ -104,7 +111,14 @@ def evaluate(model, graph, mask, criterion):
     return acc, loss
 
 
-def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
+def run_once(
+    config,
+    seed=None,
+    data_path=None,
+    logdir=None,
+    verbose=True,
+    checkpoint_path=None,
+):
     """Train once and return metrics/artifacts for benchmarking."""
     total_start = time.perf_counter()
     config = dict(config)
@@ -199,11 +213,14 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
     best_y_true = None
     best_y_pred = None
     best_y_prob = None
+    best_y_logits = None
     time_to_best_s = 0.0
     bad_epochs = 0
     epochs_trained = 0
 
     synchronize_if_cuda(device)
+    runtime_device = torch.device(device)
+    reset_cuda_peak(runtime_device)
     train_start = time.perf_counter()
 
     iterator = range(1, epochs + 1)
@@ -267,6 +284,21 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
             best_y_true = graph.y[test_mask].detach().cpu().numpy()
             best_y_pred = best_pred.detach().cpu().numpy()
             best_y_prob = best_prob.detach().cpu().numpy()
+            best_y_logits = eval_out[test_mask].detach().cpu().numpy()
+            if checkpoint_path is not None:
+                atomic_torch_save(
+                    {
+                        "model": model.state_dict(),
+                        "metadata": {
+                            "seed": int(seed),
+                            "data_path": str(data_path),
+                            "best_epoch": int(best_epoch),
+                            "best_val_acc": float(best_val_acc),
+                            "config": config,
+                        },
+                    },
+                    checkpoint_path,
+                )
             bad_epochs = 0
         else:
             bad_epochs += 1
@@ -285,7 +317,26 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
 
     synchronize_if_cuda(device)
     train_time_s = time.perf_counter() - train_start
+    training_gpu = cuda_memory_stats(runtime_device)
     elapsed_time_s = time.perf_counter() - total_start
+
+    # Node-classification validation/test inference normally happens inside the
+    # epoch loop. Run one metric-free forward after resetting the allocator
+    # peak so standalone artifacts expose a distinct inference-memory phase.
+    reset_cuda_peak(runtime_device)
+    model.eval()
+    with torch.no_grad():
+        inference_out = model(graph)
+    synchronize_if_cuda(device)
+    del inference_out
+    inference_gpu = cuda_memory_stats(runtime_device)
+    resources = flat_resource_metrics(
+        model,
+        training_gpu=training_gpu,
+        inference_gpu=inference_gpu,
+        checkpoint_path=checkpoint_path,
+        peak_rss_bytes=process_peak_rss_bytes(),
+    )
 
     if logger is not None:
         logger.add_scalar("final/best_val_acc", best_val_acc, 0)
@@ -293,6 +344,8 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
         logger.add_scalar("final/train_time_s", train_time_s, 0)
         logger.add_scalar("final/elapsed_time_s", elapsed_time_s, 0)
         logger.add_scalar("final/time_to_best_s", time_to_best_s, 0)
+        for key, value in resources.items():
+            logger.add_scalar(f"resources/{key}", value, 0)
         logger.close()
 
     if verbose:
@@ -300,6 +353,14 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
         print(f"Test acc at best val: {best_test_acc:.4f}")
         print(f"Timing: train={train_time_s:.2f}s elapsed={elapsed_time_s:.2f}s "
               f"best@={time_to_best_s:.2f}s")
+        print(
+            "Memory: "
+            f"train_peak_allocated="
+            f"{resources['training_gpu_peak_allocated_bytes']} bytes, "
+            f"train_peak_reserved="
+            f"{resources['training_gpu_peak_reserved_bytes']} bytes, "
+            f"process_peak_rss={resources['process_peak_rss_bytes']} bytes"
+        )
 
     return {
         "seed": seed,
@@ -315,6 +376,14 @@ def run_once(config, seed=None, data_path=None, logdir=None, verbose=True):
         "y_true": best_y_true,
         "y_pred": best_y_pred,
         "y_prob": best_y_prob,
+        "y_logits": best_y_logits,
+        "test_node_ids": (
+            test_mask.nonzero(as_tuple=False).squeeze(1).detach().cpu().numpy()
+        ),
+        "checkpoint_path": (
+            None if checkpoint_path is None else str(checkpoint_path)
+        ),
+        **resources,
     }
 
 

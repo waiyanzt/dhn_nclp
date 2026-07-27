@@ -34,6 +34,12 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from dhn.augmentation_utils import (
+    cuda_memory_stats,
+    flat_resource_metrics,
+    process_peak_rss_bytes,
+    reset_cuda_peak,
+)
 from dhn.utils import get_act_module, get_optimizer
 from experiments.link_prediction.imdb import (
     DHN_LP,
@@ -185,6 +191,8 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
     best_val, best_state, bad, best_epoch = float("inf"), None, 0, 0
     time_to_best_s = 0.0
     synchronize_if_cuda(device)
+    runtime_device = torch.device(device)
+    reset_cuda_peak(runtime_device)
     train_start = time.perf_counter()
 
     for epoch in range(1, epochs + 1):
@@ -222,15 +230,20 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
 
     synchronize_if_cuda(device)
     train_time_s = time.perf_counter() - train_start
+    training_gpu = cuda_memory_stats(runtime_device)
     epochs_trained = epoch
     if best_state is not None:
         model.load_state_dict(best_state)
+        del best_state
 
+    data.x = None
+    reset_cuda_peak(runtime_device)
     synchronize_if_cuda(device)
     eval_start = time.perf_counter()
     metrics, (psc, nsc) = evaluate_test(model, data, test_pos, test_neg, offsets, hits_k, threshold)
     synchronize_if_cuda(device)
     eval_time_s = time.perf_counter() - eval_start
+    inference_gpu = cuda_memory_stats(runtime_device)
     metrics.update(
         seed=seed,
         train_time_s=train_time_s,
@@ -252,6 +265,15 @@ def run_one_seed(config, bundle_path, seed, device, scores_csv_path, verbose=Tru
 
     if scores_csv_path is not None:
         write_scores_csv(scores_csv_path, test_pos, test_neg, psc, nsc, offsets)
+    metrics.update(
+        flat_resource_metrics(
+            model,
+            training_gpu=training_gpu,
+            inference_gpu=inference_gpu,
+            checkpoint_path=None,
+            peak_rss_bytes=process_peak_rss_bytes(),
+        )
+    )
     return metrics
 
 

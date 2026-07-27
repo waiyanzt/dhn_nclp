@@ -7,7 +7,11 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dhn.augmentation_utils import cuda_memory_stats
+from dhn.augmentation_utils import (
+    RESOURCE_METRIC_KEYS,
+    cuda_memory_stats,
+    flat_resource_metrics,
+)
 from experiments.link_prediction.wordnet_augmentation import (
     DEFAULT_VARIANTS,
     VARIANTS,
@@ -71,12 +75,23 @@ def test_fixed_candidates_are_deterministic_and_exclude_known_triples():
 def test_cpu_memory_and_flattened_seed_summary_contract():
     import torch
 
-    assert set(cuda_memory_stats(torch.device("cpu"))) == {
+    cpu_gpu_stats = cuda_memory_stats(torch.device("cpu"))
+    assert set(cpu_gpu_stats) == {
         "gpu_allocated_bytes",
         "gpu_reserved_bytes",
         "gpu_peak_allocated_bytes",
         "gpu_peak_reserved_bytes",
     }
+    resource_metrics = flat_resource_metrics(
+        torch.nn.Linear(3, 2),
+        training_gpu=cpu_gpu_stats,
+        inference_gpu=cpu_gpu_stats,
+        peak_rss_bytes=123,
+    )
+    assert set(resource_metrics) == set(RESOURCE_METRIC_KEYS)
+    assert resource_metrics["parameter_bytes"] == 32
+    assert resource_metrics["checkpoint_bytes"] == 0
+    assert resource_metrics["process_peak_rss_bytes"] == 123
     summary = {
         "seed": 1,
         "variants": list(DEFAULT_VARIANTS),

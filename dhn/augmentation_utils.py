@@ -37,6 +37,15 @@ CUDA_MEMORY_KEYS = (
     "gpu_peak_allocated_bytes",
     "gpu_peak_reserved_bytes",
 )
+RESOURCE_METRIC_KEYS = (
+    "parameter_bytes",
+    "buffer_bytes",
+    "static_model_bytes",
+    "checkpoint_bytes",
+    "process_peak_rss_bytes",
+    *(f"training_{key}" for key in CUDA_MEMORY_KEYS),
+    *(f"inference_{key}" for key in CUDA_MEMORY_KEYS),
+)
 
 
 def set_determinism(seed: int) -> None:
@@ -151,6 +160,37 @@ def merge_cuda_memory_stats(
 
 def checkpoint_size_bytes(path: Path) -> int:
     return int(path.stat().st_size) if path.exists() else 0
+
+
+def flat_resource_metrics(
+    model: nn.Module,
+    *,
+    training_gpu: Mapping[str, int],
+    inference_gpu: Mapping[str, int],
+    checkpoint_path: Optional[Path] = None,
+    peak_rss_bytes: Optional[int] = None,
+) -> dict[str, int]:
+    """Flatten the augmentation resource contract for legacy CSV writers."""
+    metrics = {
+        **model_memory_bytes(model),
+        "checkpoint_bytes": (
+            checkpoint_size_bytes(Path(checkpoint_path))
+            if checkpoint_path is not None
+            else 0
+        ),
+        "process_peak_rss_bytes": (
+            process_peak_rss_bytes()
+            if peak_rss_bytes is None
+            else int(peak_rss_bytes)
+        ),
+    }
+    for phase, values in (
+        ("training", training_gpu),
+        ("inference", inference_gpu),
+    ):
+        for key in CUDA_MEMORY_KEYS:
+            metrics[f"{phase}_{key}"] = int(values.get(key, 0))
+    return metrics
 
 
 def torch_load_full(path: Path, map_location: Any = "cpu") -> Any:

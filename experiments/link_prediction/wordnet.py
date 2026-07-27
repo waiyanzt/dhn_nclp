@@ -19,6 +19,7 @@ import itertools
 import os
 import time
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -27,6 +28,13 @@ import torch.nn.functional as F
 import yaml
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
+from dhn.augmentation_utils import (
+    RESOURCE_METRIC_KEYS,
+    cuda_memory_stats,
+    flat_resource_metrics,
+    process_peak_rss_bytes,
+    reset_cuda_peak,
+)
 from dhn.utils import get_act_module, get_optimizer
 from experiments.link_prediction.imdb import (
     DHN_LP,
@@ -382,6 +390,8 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
     best_val, best_state, bad, best_epoch = float("inf"), None, 0, 0
     time_to_best_s = 0.0
     synchronize_if_cuda(device)
+    runtime_device = torch.device(device)
+    reset_cuda_peak(runtime_device)
     train_start = time.perf_counter()
 
     for epoch in range(1, epochs + 1):
@@ -406,12 +416,16 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
 
     if best_state is not None:
         model.load_state_dict(best_state)
+        del best_state
 
     synchronize_if_cuda(device)
     train_time_s = time.perf_counter() - train_start
+    training_gpu = cuda_memory_stats(runtime_device)
     epochs_trained = epoch
 
     print(f"  [seed={seed}] Running test evaluation (filtered MRR)...", flush=True)
+    data.x = None
+    reset_cuda_peak(runtime_device)
     synchronize_if_cuda(device)
     eval_start = time.perf_counter()
     metrics = evaluate_filtered(
@@ -433,6 +447,7 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
 
     artifact_config = config.get("artifacts", {})
     dataset_slug = meta.get("dataset_slug", "wordnet")
+    checkpoint_path = None
     if artifact_config.get("save_best_checkpoint", False):
         checkpoint_dir = os.path.join(out_dir, "checkpoints")
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -477,6 +492,19 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
         )
         print(f"  [seed={seed}] saved Kendall scores -> {kendall_path}")
 
+    inference_gpu = cuda_memory_stats(runtime_device)
+    metrics.update(
+        flat_resource_metrics(
+            model,
+            training_gpu=training_gpu,
+            inference_gpu=inference_gpu,
+            checkpoint_path=(
+                None if checkpoint_path is None else Path(checkpoint_path)
+            ),
+            peak_rss_bytes=process_peak_rss_bytes(),
+        )
+    )
+
     h1 = metrics.get("hits@1", float("nan"))
     h10 = metrics.get("hits@10", float("nan"))
     print(f"  [seed={seed}] TEST MRR={metrics['mrr']:.4f} MRR_tail={metrics['mrr_tail']:.4f} "
@@ -511,6 +539,7 @@ def write_kg_summary_csv(path, per_seed, hits_k):
                 "elapsed_time_s",
                 "time_to_best_s",
                 "epochs_trained",
+                *RESOURCE_METRIC_KEYS,
             ])
 
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
