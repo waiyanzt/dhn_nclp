@@ -87,7 +87,7 @@ Expected shapes: train ≈ (2926, 2), val ≈ (418, 2), test ≈ (836, 2).
 
 ### Step 2 — Preprocess DHN-LP bundles
 
-`preprocess/imdb/link_prediction.py` builds the heterograph from `data/raw/IMDB/movie_metadata.csv` using Bishwash's hardcoded v1–v4 topology rules, flattens it to a single homogeneous PyG graph with global node ids, enumerates `{p1, c2, p3}` patterns, and saves a `.pt` bundle per `(task, variant)`. Only **train** target edges enter the graph; val/test are never added, so leakage prevention is by construction.
+`preprocess/imdb/link_prediction.py` builds the heterograph from `data/raw/IMDB/movie_metadata.csv` using Bishwash's hardcoded v1–v4 topology rules, flattens it to a single homogeneous PyG graph with global node ids, enumerates `{p1, c2}` patterns, and saves a `.pt` bundle per `(task, variant)`. Only **train** target edges enter the graph; val/test are never added, so leakage prevention is by construction.
 
 **Genre nodes are added to the graph for all three tasks** (Bishwash's RGCN runner has the `movie-genre` relation wired up for every task; this matches that intent). For `mg`, genre is the LP target so only train movie-genre edges go in; for `md` and `ml`, genre is auxiliary structural context — every movie carries its genre edge from `labels.npy` regardless of split (no leakage since genre is not the target).
 
@@ -106,7 +106,7 @@ Each invocation writes `data/preprocessed/IMDB_dhn_lp_<task>_<variant>.pt` conta
 
 ### Step 3 — Train (multi-seed, 3 seeds per bundle)
 
-`experiments/link_prediction/imdb.py` runs the lab's standard 3-seed protocol (`1566911444, 20241017, 20251017`) per `(task, variant)` and writes both a per-seed scores CSV and an aggregated summary CSV. Eval contract: AUC, AP, Precision/Recall/F1/Accuracy @ 0.5, Hits@{1,3,5}, MRR. Pairwise log-sigmoid loss; val-BCE early stopping with patience 15 and a 200-epoch cap.
+`experiments/link_prediction/imdb.py` runs the lab's standard 3-seed protocol (`1566911444, 20241017, 20251017`) per `(task, variant)` and writes both a per-seed scores CSV and an aggregated summary CSV. Eval contract: AUC, AP, Precision/Recall/F1/Accuracy @ 0.5, Hits@{1,3,5}, MRR. Pairwise log-sigmoid training and validation loss; early stopping uses patience 15 and a 200-epoch cap.
 
 Timing contract for new benchmark runs:
 
@@ -142,6 +142,51 @@ Under `results/v100/imdb_lp_baseline/` per `(task, variant)`:
 |------|------|-----|
 | `lp_scores_<task>_<variant>_seed<S>.csv` | `(1+K) × N_test` | `[movie_local, target_local, score, label]` in CMPNN local-id space — directly comparable with Bishwash's RGCN scores CSVs (Kendall τ across pattern sets). |
 | `lp_summary_<task>_<variant>.csv` | one row per metric | `[task, variant, metric, mean, std, n_seeds]`, including timing metrics. Std is computed with `ddof=0` to match the lab convention. |
+
+### Joint IMDb link-prediction data augmentation
+
+`experiments/link_prediction/imdb_augmentation.py` trains one shared DHN,
+optimizer, and checkpoint across all valid graph variants for one task. The
+task sets match the RGCN augmentation experiment: `md` uses `v1,v3`; `mg` and
+`ml` use `v1,v2,v3,v4`. A super-epoch visits every selected variant in seeded
+random order, then selects the shared checkpoint by mean validation pairwise
+log-sigmoid loss.
+
+Run preflight first to prove that every variant has byte-identical positive and
+negative split tables, node spaces, offsets, and pattern keys:
+
+```bash
+for task in md mg ml; do
+  python -m experiments.link_prediction.imdb_augmentation \
+    --task "$task" \
+    --config configs/imdb_lp.yaml \
+    --preflight-only
+done
+```
+
+Then run all three tasks:
+
+```bash
+for task in md mg ml; do
+  python -m experiments.link_prediction.imdb_augmentation \
+    --task "$task" \
+    --config configs/imdb_lp.yaml \
+    --output-dir results/dhn_augmentation/IMDB_LP
+done
+```
+
+The default `--batch-size 0` retains DHN's existing full-split update. An
+explicit smaller value (for example `--batch-size 256`) batches positive rows
+and their fixed negatives. This does not change the DHN encoder or decoder, but
+it does increase the number of optimizer updates per super-epoch and is
+therefore recorded in every summary.
+
+Each task writes `seed_summary.csv` under
+`results/dhn_augmentation/IMDB_LP/<task>/`, plus per-seed histories, shared
+checkpoints, exact resume state, per-variant test scores and metrics, pairwise
+invariance, peak process RSS, and CUDA allocated/reserved/peak memory. Resume an
+interrupted task with the identical command plus `--resume`; only
+`--super-epochs` and `--device` may change.
 
 ### Swapping the homomorphism patterns
 

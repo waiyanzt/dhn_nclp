@@ -22,7 +22,7 @@ model:
 
 training:
   epochs: 200
-  patience: 15        # val-BCE early stopping
+  patience: 15        # mean validation pairwise-loss early stopping
   optimizer:
     name: AdamW
     kwargs:

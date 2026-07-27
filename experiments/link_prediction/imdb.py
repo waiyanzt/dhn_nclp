@@ -1,8 +1,8 @@
 """Train DHN for link prediction (multi-seed, scores CSV + summary CSV).
 
 Mirrors Bishwash's RGCN-LP eval contract: 3 seeds, AUC/AP/Hits@{1,3,5}/MRR,
-pairwise log-sigmoid loss, val-BCE early stopping (patience 15, max 200 epochs),
-no input features (learned nn.Embedding only).
+pairwise log-sigmoid training and validation loss (patience 15, max 200
+epochs), no input features (learned nn.Embedding only).
 
 Usage:
     python -m experiments.link_prediction.imdb --config configs/imdb_lp.yaml \\
