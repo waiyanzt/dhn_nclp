@@ -108,26 +108,49 @@ def sample_negative_triples(triples, neg_per_pos, rng, num_entities, device):
     return h_ids, r_ids, t_ids
 
 
-def train_epoch(model, data, train_triples, neg_per_pos, rng, device, optimizer):
+def train_epoch(
+    model,
+    data,
+    train_triples,
+    neg_per_pos,
+    rng,
+    device,
+    optimizer,
+    batch_size=0,
+):
+    """One optimizer update, with optional memory-only gradient accumulation."""
     model.train()
     optimizer.zero_grad()
-    h = model.encode(data)
-
-    h_ids = train_triples[:, 0]
-    r_ids = train_triples[:, 1]
-    t_ids = train_triples[:, 2]
-
-    pos_scores = model.score(h[h_ids], r_ids, h[t_ids])
-
-    neg_h, neg_r, neg_t = sample_negative_triples(
-        train_triples, neg_per_pos, rng, model.num_entities, device
+    num_triples = len(train_triples)
+    effective_batch_size = (
+        num_triples
+        if batch_size is None or int(batch_size) <= 0
+        else min(int(batch_size), num_triples)
     )
-    neg_scores = model.score(h[neg_h], neg_r, h[neg_t])
-
-    loss = -(F.logsigmoid(pos_scores).mean() + F.logsigmoid(-neg_scores).mean())
-    loss.backward()
+    epoch_loss = 0.0
+    for start in range(0, num_triples, effective_batch_size):
+        batch = train_triples[start : start + effective_batch_size]
+        h = model.encode(data)
+        h_ids = batch[:, 0]
+        r_ids = batch[:, 1]
+        t_ids = batch[:, 2]
+        pos_scores = model.score(h[h_ids], r_ids, h[t_ids])
+        neg_h, neg_r, neg_t = sample_negative_triples(
+            batch, neg_per_pos, rng, model.num_entities, device
+        )
+        neg_scores = model.score(h[neg_h], neg_r, h[neg_t])
+        batch_loss = -(
+            F.logsigmoid(pos_scores).mean()
+            + F.logsigmoid(-neg_scores).mean()
+        )
+        weight = len(batch) / num_triples
+        (batch_loss * weight).backward()
+        epoch_loss += float(batch_loss.item()) * weight
+        # encode() stores its activation on the shared graph object.
+        data.x = None
+        del h, pos_scores, neg_scores, batch_loss
     optimizer.step()
-    return loss.item()
+    return epoch_loss
 
 
 @torch.no_grad()
@@ -382,6 +405,15 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
     epochs = config["training"]["epochs"]
     patience = config["training"]["patience"]
     neg_per_pos = config["training"].get("neg_per_pos", 10)
+    train_batch_size = int(config["training"].get("batch_size", 0))
+    effective_train_batch_size = (
+        len(train_triples)
+        if train_batch_size <= 0
+        else min(train_batch_size, len(train_triples))
+    )
+    train_batches_per_epoch = int(
+        np.ceil(len(train_triples) / effective_train_batch_size)
+    )
     hits_k = tuple(config["eval"]["hits_k"])
     eval_batch_size = config["eval"].get("eval_batch_size", 256)
     binary_k = config["eval"].get("binary_k")
@@ -390,13 +422,24 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
     rng = np.random.RandomState(seed)
     best_val, best_state, bad, best_epoch = float("inf"), None, 0, 0
     time_to_best_s = 0.0
+    train_graph_forwards = 0
     synchronize_if_cuda(device)
     runtime_device = torch.device(device)
     reset_cuda_peak(runtime_device)
     train_start = time.perf_counter()
 
     for epoch in range(1, epochs + 1):
-        loss = train_epoch(model, data, train_triples, neg_per_pos, rng, device, optimizer)
+        loss = train_epoch(
+            model,
+            data,
+            train_triples,
+            neg_per_pos,
+            rng,
+            device,
+            optimizer,
+            batch_size=train_batch_size,
+        )
+        train_graph_forwards += train_batches_per_epoch
         v_loss = compute_val_loss(model, data, val_triples, neg_per_pos,
                                   np.random.RandomState(epoch), device)
 
@@ -444,6 +487,10 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
         best_val_loss=best_val,
         best_epoch=best_epoch,
         epochs_trained=epochs_trained,
+        train_batch_size=effective_train_batch_size,
+        train_batches_per_epoch=train_batches_per_epoch,
+        train_graph_forwards=train_graph_forwards,
+        optimizer_steps=epochs_trained,
     )
 
     artifact_config = config.get("artifacts", {})
@@ -540,6 +587,10 @@ def write_kg_summary_csv(path, per_seed, hits_k):
                 "elapsed_time_s",
                 "time_to_best_s",
                 "epochs_trained",
+                "train_batch_size",
+                "train_batches_per_epoch",
+                "train_graph_forwards",
+                "optimizer_steps",
                 *RESOURCE_METRIC_KEYS,
             ])
 

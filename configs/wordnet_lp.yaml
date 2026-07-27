@@ -21,6 +21,9 @@ model:
 training:
   epochs: 200
   patience: 10
+  # Memory-only execution chunking: gradients are accumulated across chunks
+  # and the optimizer still steps exactly once per epoch.
+  batch_size: 65536
   optimizer:
     name: Adam
     kwargs:

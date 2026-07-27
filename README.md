@@ -365,6 +365,10 @@ Fusion AUC/AP, binary metrics, MRR, and Hits are explicitly prefixed
 `candidate_` because they are evaluated on the shared 200-tail candidate
 matrix. They are not presented as full filtered all-entity MRR. Full filtered
 metrics remain available for every independently trained constituent.
+`configs/wordnet_lp.yaml` uses 65,536-positive training chunks with gradient
+accumulation to bound decoder memory on a 32 GB V100. All chunks contribute to
+one weighted epoch loss and the optimizer still steps once per epoch, so this
+does not turn one epoch into multiple optimizer updates.
 
 ---
 
