@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dhn.augmentation_utils import cuda_memory_stats
 from experiments.link_prediction.wordnet_augmentation import (
+    DEFAULT_VARIANTS,
     VARIANTS,
     canonicalize_variants,
     fixed_tail_candidates,
@@ -27,6 +28,12 @@ def test_four_canonical_variants_and_aliases():
     assert canonicalize_variants("unchanged,inverse,transitive,universal") == list(
         VARIANTS
     )
+    assert DEFAULT_VARIANTS == (
+        "no_changes",
+        "all_inverse_edges",
+        "universal_edges",
+    )
+    assert "transitive_edges" not in DEFAULT_VARIANTS
     assert FORMAT_VERSION == "wordnet_lp_four_variants_v1"
 
 
@@ -72,6 +79,7 @@ def test_cpu_memory_and_flattened_seed_summary_contract():
     }
     summary = {
         "seed": 1,
+        "variants": list(DEFAULT_VARIANTS),
         "training_seconds": 2.0,
         "best_mean_val_filtered_MRR": 0.3,
         "epoch_accounting": {
@@ -103,6 +111,7 @@ def test_cpu_memory_and_flattened_seed_summary_contract():
         },
     }
     row = flatten_seed_summary(summary)
+    assert row["variants"] == "no_changes,all_inverse_edges,universal_edges"
     assert row["mean_legacy_test_filtered_MRR"] == 0.2
     assert row["process_peak_rss_bytes"] == 30
     assert row["training_gpu_peak_allocated_bytes"] == 3

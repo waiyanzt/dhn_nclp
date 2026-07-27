@@ -253,6 +253,62 @@ mathematical output.
 
 ---
 
+## WordNet Link-Prediction Data Augmentation
+
+The joint WordNet experiment uses one shared DHN + DistMult model, optimizer,
+and checkpoint across three graph variants:
+
+```text
+no_changes
+all_inverse_edges
+universal_edges
+```
+
+`transitive_edges` is deliberately omitted as a standalone training arm.
+However, `universal_edges` still contains both inverse and transitive
+augmentations by definition. The canonical four-variant preprocessing archive
+is retained so relation IDs, leakage filtering, and fixed invariance candidates
+stay compatible with the RGCN augmentation workflow.
+
+Build the shared split archive and DHN bundles:
+
+```bash
+python -m preprocess.wordnet.augmentation \
+  --data-dir \
+  ../INV-GNN/src/baselines/CMPNN/data/raw/wordnet_3hops_augmented_full
+```
+
+Validate the selected three variants and model-pattern contract:
+
+```bash
+python -m experiments.link_prediction.wordnet_augmentation \
+  --config configs/wordnet_augmentation.yaml \
+  --device cuda:0 \
+  --preflight-only
+```
+
+Then run the three configured seeds:
+
+```bash
+python -m experiments.link_prediction.wordnet_augmentation \
+  --config configs/wordnet_augmentation.yaml \
+  --device cuda:0 \
+  --output-dir results/dhn_augmentation/WORDNET
+```
+
+The default supervised-triple batch size is `65536`. Reducing
+`--batch-size` lowers decoder and negative-sampling memory but creates more
+full-graph encoder passes and optimizer updates per super-epoch. The two-layer
+DHN itself retains `mapping_chunk_size: 100000` and activation checkpointing
+from the supplied configuration.
+
+Outputs include `seed_summary.csv`, exact resume states, a shared checkpoint,
+per-variant filtered-ranking metrics, fixed-candidate scores, pairwise
+invariance, peak process RSS, and CUDA allocated/reserved/peak memory. Resume
+with the same command plus `--resume`.
+
+---
+
 ## IMDb Node Classification
 
 IMDb node classification predicts Action, Comedy, or Drama for 4,180 movie

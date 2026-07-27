@@ -2,6 +2,13 @@ device: "cuda:0"
 
 seeds: [1566911444, 20241017, 20251017]
 
+# The runner's default joint rotation is:
+# no_changes, all_inverse_edges, universal_edges.
+# transitive_edges is deliberately excluded as a standalone training arm.
+#
+# Note: universal_edges still contains inverse and transitive augmentations by
+# definition; only the transitive-only graph is omitted.
+
 # This is the same DHN + DistMult architecture as configs/wordnet_lp.yaml.
 model:
   in_dim: 64

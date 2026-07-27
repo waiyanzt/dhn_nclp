@@ -1,6 +1,10 @@
-"""Joint four-variant WordNet augmentation for DHN + DistMult.
+"""Joint three-variant WordNet augmentation for DHN + DistMult.
 
-The experiment contract mirrors INV-GNN's WordNet RGCN augmentation runner:
+The experiment contract mirrors INV-GNN's WordNet RGCN augmentation runner.
+By default the shared model rotates through ``no_changes``,
+``all_inverse_edges``, and ``universal_edges``.  The transitive-only arm remains
+in the canonical preprocessing archive so fixed filtering is comparable with
+RGCN, but it is not trained or evaluated unless explicitly requested.
 
 * one model and optimizer are shared by every selected graph variant;
 * one super-epoch visits every variant in a seeded random order;
@@ -54,6 +58,11 @@ VARIANTS = (
     "no_changes",
     "all_inverse_edges",
     "transitive_edges",
+    "universal_edges",
+)
+DEFAULT_VARIANTS = (
+    "no_changes",
+    "all_inverse_edges",
     "universal_edges",
 )
 VARIANT_ALIASES = {
@@ -237,6 +246,36 @@ def prepare_bundles(
     return bundles, prepared
 
 
+def validate_model_bundle_contract(
+    config: Mapping[str, Any], bundles: Mapping[str, Mapping[str, Any]]
+) -> None:
+    reference = next(iter(bundles.values()))
+    patterns = tuple(reference["meta"].get("patterns", ()))
+    if not patterns:
+        raise ValueError("WordNet bundle does not declare meta.patterns")
+    num_nodes = int(reference["meta"]["num_entities"])
+    for variant, bundle in bundles.items():
+        data = bundle["data"]
+        if int(data.num_nodes) != num_nodes:
+            raise ValueError(f"num_nodes differs for {variant}")
+        if tuple(bundle["meta"].get("patterns", ())) != patterns:
+            raise ValueError(f"pattern set differs for {variant}")
+        if set(data.mapping_index_dict) != set(patterns):
+            raise ValueError(
+                f"{variant} mapping keys {sorted(data.mapping_index_dict)} "
+                f"do not match declared patterns {sorted(patterns)}"
+            )
+    layers = config["model"].get("layers_config", ())
+    if not layers:
+        raise ValueError("model.layers_config must contain at least one layer")
+    for layer_number, layer in enumerate(layers, start=1):
+        if set(layer) != set(patterns):
+            raise ValueError(
+                f"Layer {layer_number} kernels {sorted(layer)} do not match "
+                f"bundle patterns {sorted(patterns)}"
+            )
+
+
 def pack_keys(
     triples: np.ndarray, num_entities: int, num_relations: int
 ) -> np.ndarray:
@@ -415,6 +454,9 @@ def filtered_evaluate(
                 ).items()
             }
         )
+    # DHNWordNetLP.encode assigns a generated embedding activation to graph.x.
+    # It is rebuilt on every encode, so do not retain one activation per graph.
+    graph.x = None
     return metrics
 
 
@@ -458,6 +500,7 @@ def shared_candidate_frame(
             "score": probabilities,
         }
     )
+    graph.x = None
     return metrics, frame
 
 
@@ -482,6 +525,7 @@ def run_seed(
         args.fixed_negatives,
         args.candidate_seed,
     )
+    validate_model_bundle_contract(config, bundles)
     num_entities = int(shared["num_entities"])
     num_relations = int(shared["num_relations"])
 
@@ -657,6 +701,7 @@ def run_seed(
                 optimizer.step()
                 optimizer_steps += 1
                 losses.append(float(loss.detach().cpu()))
+                graphs[variant].x = None
                 del embeddings, positive_scores, negative_scores, loss
             variant_epochs += 1
             train_losses[variant] = float(np.mean(losses))
@@ -870,6 +915,8 @@ def run_seed(
         ),
         "splits_npz": str(args.splits_npz.resolve()),
         "split_protocol": "official_leakage_free_four_variant_wordnet_splits",
+        "augmentation_protocol": "selected_variant_shared_model",
+        "canonical_archive_variants": list(VARIANTS),
         "best_mean_val_filtered_MRR": (
             early_stopper.best if np.isfinite(early_stopper.best) else None
         ),
@@ -896,6 +943,7 @@ def flatten_seed_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
     memory = summary["memory"]
     row = {
         "seed": summary["seed"],
+        "variants": ",".join(summary["variants"]),
         "super_epochs_ran": accounting["super_epochs_ran"],
         "variant_epochs_ran": accounting["variant_epochs_ran"],
         "updates_per_super_epoch": accounting["updates_per_super_epoch"],
@@ -925,10 +973,17 @@ def flatten_seed_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Joint four-variant WordNet augmentation for DHN"
+        description="Joint three-variant WordNet augmentation for DHN"
     )
     parser.add_argument("--config", type=Path, default=Path("configs/wordnet_augmentation.yaml"))
-    parser.add_argument("--variants", default=",".join(VARIANTS))
+    parser.add_argument(
+        "--variants",
+        default=",".join(DEFAULT_VARIANTS),
+        help=(
+            "Defaults to no_changes,all_inverse_edges,universal_edges; "
+            "transitive_edges is an optional ablation"
+        ),
+    )
     parser.add_argument("--seeds", default="")
     parser.add_argument(
         "--splits-npz",
@@ -970,6 +1025,11 @@ def main() -> None:
     parser.add_argument("--candidate-seed", type=int, default=1566911444)
     parser.add_argument("--device", default="")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Validate the shared split, bundles, and model contract, then exit",
+    )
     args = parser.parse_args()
 
     with args.config.open("r", encoding="utf-8") as handle:
@@ -986,6 +1046,34 @@ def main() -> None:
     )
     args.splits_npz = args.splits_npz.resolve()
     args.bundle_root = args.bundle_root.resolve()
+    if args.preflight_only:
+        bundles, shared = prepare_bundles(
+            args.splits_npz,
+            args.bundle_root,
+            args.bundle_pattern,
+            variants,
+            args.fixed_negatives,
+            args.candidate_seed,
+        )
+        validate_model_bundle_contract(config, bundles)
+        print(
+            f"[OK] WordNet augmentation preflight: variants={variants}, "
+            f"entities={int(shared['num_entities'])}, "
+            f"relations={int(shared['num_relations'])}, seeds={seeds}"
+        )
+        for variant in variants:
+            data = bundles[variant]["data"]
+            mapping_counts = {
+                name: 0 if mapping is None else int(mapping.shape[0])
+                for name, mapping in data.mapping_index_dict.items()
+            }
+            print(
+                f"  {variant}: train_triples="
+                f"{len(bundles[variant]['train_pos'])} "
+                f"edges={bundles[variant]['edge_count']} "
+                f"mappings={mapping_counts} path={bundles[variant]['_path']}"
+            )
+        return
     output_root = args.output_dir.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     summaries = [
