@@ -30,6 +30,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 
 from dhn.augmentation_utils import (
     RESOURCE_METRIC_KEYS,
+    atomic_torch_save,
     cuda_memory_stats,
     flat_resource_metrics,
     process_peak_rss_bytes,
@@ -454,7 +455,7 @@ def run_one_seed(config, bundle_path, seed, device, out_dir, verbose=True):
         checkpoint_path = os.path.join(
             checkpoint_dir, f"best_model_{dataset_slug}_seed{seed}.pt"
         )
-        torch.save(
+        atomic_torch_save(
             {name: value.detach().cpu() for name, value in model.state_dict().items()},
             checkpoint_path,
         )

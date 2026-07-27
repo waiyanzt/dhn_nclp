@@ -315,6 +315,57 @@ per-variant filtered-ranking metrics, fixed-candidate scores, pairwise
 invariance, peak process RSS, and CUDA allocated/reserved/peak memory. Resume
 with the same command plus `--resume`.
 
+### Independent WordNet baselines with output fusion
+
+The backup output-fusion protocol is separate from joint augmentation. It
+trains one independently initialized DHN + DistMult model per variant and seed,
+saves that model's best checkpoint and telemetry, and then averages aligned raw
+pre-sigmoid DistMult scores. The default variants are `no_changes`,
+`all_inverse_edges`, and `universal_edges`; the transitive-only arm remains
+excluded.
+
+Build the common four-variant bundles once, then validate the independent
+baseline matrix:
+
+```bash
+python -m preprocess.wordnet.augmentation \
+  --data-dir \
+  ../INV-GNN/src/baselines/CMPNN/data/raw/wordnet_3hops_augmented_full
+
+python -m experiments.link_prediction.wordnet_output_fusion \
+  --config configs/wordnet_lp.yaml \
+  --device cuda:0 \
+  --preflight-only
+```
+
+Run all three independent variants over the lab-standard seeds and produce
+output fusion in the same workflow:
+
+```bash
+python -m experiments.link_prediction.wordnet_output_fusion \
+  --config configs/wordnet_lp.yaml \
+  --device cuda:0 \
+  --output-dir results/v100/wordnet_lp_baseline_retrain
+```
+
+Each variant directory contains full filtered all-entity WordNet metrics,
+fixed-candidate scores, a best checkpoint, per-seed metrics, and CPU/CUDA
+telemetry. The `output_fusion/` directory contains:
+
+```text
+seed_summary.csv
+output_fusion_raw.csv
+output_fusion_summary.csv
+fusion_vs_variant.csv
+output_fusion_manifest.json
+output_fusion_seed<seed>.npz
+```
+
+Fusion AUC/AP, binary metrics, MRR, and Hits are explicitly prefixed
+`candidate_` because they are evaluated on the shared 200-tail candidate
+matrix. They are not presented as full filtered all-entity MRR. Full filtered
+metrics remain available for every independently trained constituent.
+
 ---
 
 ## IMDb Node Classification
