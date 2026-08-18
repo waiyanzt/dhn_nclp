@@ -133,7 +133,7 @@ All training entrypoints now use one resource schema:
 |---|---|---|
 | IMDb / Freebase node classification | `benchmark_imdb`, `benchmark_freebase` via `node_classification.train` | training + inference CUDA peaks, peak process RSS |
 | IMDb / DBLP / WordNet link prediction | `link_prediction.imdb`, `dblp`, `wordnet` | training + inference CUDA peaks, peak process RSS |
-| IMDb NC/LP and WordNet LP augmentation | the corresponding `*_augmentation` runner | training + inference CUDA peaks, peak process RSS |
+| IMDb/Freebase NC, IMDb LP, and WordNet LP augmentation | the corresponding `*_augmentation` runner | training + inference CUDA peaks, peak process RSS |
 | NC and WordNet output fusion | the corresponding output-fusion workflow | constituent training peaks and sequential-inference peaks |
 | Original ENZYMES/PROTEINS graph classification | `original_graph_classification.train` | per-fold training + inference CUDA peaks, peak process RSS |
 
@@ -584,7 +584,10 @@ enumeration while avoiding mappings rooted at nodes that never enter the loss.
 ```bash
 python -m experiments.node_classification.benchmark_freebase \
   --config configs/freebase_nc.yaml \
-  --out-dir results/v100/freebase_nc_baseline_retrain
+  --variants "No Changes" "Exact 2-Hop" \
+  --device cuda:0 \
+  --no-output-fusion \
+  --out-dir results/freebase_nc/baselines
 ```
 
 The benchmark runs seeds `1566911444`, `20241017`, and `20251017`. It writes
@@ -607,6 +610,46 @@ The summary contains accuracy, macro precision/recall, micro-F1, macro-F1,
 training time, elapsed time, time to best validation checkpoint, best epoch,
 total epochs trained, CPU peak RSS, model/checkpoint sizes, and training and
 inference CUDA allocated/reserved peaks.
+
+### Joint Freebase data augmentation
+
+The joint runner shares one featureless DHN, learned node-embedding table,
+optimizer, and checkpoint across `unchanged` and `exact_2`. One balanced
+super-epoch performs one full labeled-BOOK update on each graph in seeded
+random order. Mean validation cross-entropy across both variants selects the
+checkpoint, matching the Freebase augmentation protocol while retaining the
+DHN model, loss, optimizer, and `p1,c2` mapping contract.
+
+Because preprocessing stores mappings only at labeled BOOK roots, the runner
+requires the one-layer DHN in `configs/freebase_nc.yaml`. This is exact for all
+supervised outputs; it refuses a multilayer configuration that would require
+intermediate mappings rooted at unlabeled neighbors.
+
+Validate the shared node, label, split, pattern, and model contract:
+
+```bash
+python -m experiments.node_classification.freebase_augmentation \
+  --config configs/freebase_nc.yaml \
+  --variants unchanged,exact_2 \
+  --device cuda:0 \
+  --preflight-only
+```
+
+Run the lab-standard three seeds:
+
+```bash
+python -m experiments.node_classification.freebase_augmentation \
+  --config configs/freebase_nc.yaml \
+  --variants unchanged,exact_2 \
+  --seeds 1566911444,20241017,20251017 \
+  --device cuda:0 \
+  --output-dir results/freebase_nc/data_augmentation
+```
+
+Add `--resume` to continue exact completed-super-epoch state. Per-seed outputs
+include the shared checkpoint, training history, test metrics and aligned
+logits for both variants, pairwise Kendall invariance, optimizer-step
+accounting, CPU peak RSS, and separate training/inference CUDA allocator peaks.
 
 ---
 

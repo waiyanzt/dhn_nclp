@@ -37,3 +37,10 @@ training:
   lr_scheduling:
     name: null
     kwargs: {}
+
+# Shared-model graph-variant augmentation schedule. These values do not alter
+# the independent baseline runner above.
+augmentation:
+  super_epochs: 100
+  patience: 30
+  grad_clip: 0.0

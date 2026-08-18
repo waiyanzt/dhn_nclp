@@ -11,6 +11,7 @@ DIRECT_TRAINING_RUNNERS = (
     "experiments/link_prediction/dblp.py",
     "experiments/link_prediction/wordnet.py",
     "experiments/node_classification/imdb_augmentation.py",
+    "experiments/node_classification/freebase_augmentation.py",
     "experiments/link_prediction/imdb_augmentation.py",
     "experiments/link_prediction/wordnet_augmentation.py",
     "experiments/original_graph_classification/train.py",

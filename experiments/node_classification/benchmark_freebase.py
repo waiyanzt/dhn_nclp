@@ -48,7 +48,17 @@ def parse_args():
     parser.add_argument("--seeds", type=int, nargs="+", default=DEFAULT_SEEDS)
     parser.add_argument("--variants", nargs="+", default=None)
     parser.add_argument(
+        "--device",
+        default=None,
+        help="Override config device, e.g. cuda:0 or cpu.",
+    )
+    parser.add_argument(
         "--out-dir", default="results/v100/freebase_nc_baseline"
+    )
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Validate selected bundle availability, print the run matrix, and exit.",
     )
     parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument(
@@ -117,9 +127,21 @@ def formatted(mean, std, decimals):
 def main():
     args = parse_args()
     config = load_config(args.config)
+    if args.device is not None:
+        config["device"] = args.device
     variants = resolve_variants(args.variants)
     if not variants:
         raise SystemExit("No Freebase bundles are available")
+
+    if args.preflight_only:
+        print("Freebase DHN node-classification baseline preflight")
+        print(f"  device:   {config['device']}")
+        print(f"  seeds:    {args.seeds}")
+        print(f"  output:   {args.out_dir}")
+        for variant, bundle_path in variants.items():
+            size_mib = Path(bundle_path).stat().st_size / 2**20
+            print(f"  {variant}: {bundle_path} ({size_mib:.1f} MiB)")
+        return
 
     os.makedirs(args.out_dir, exist_ok=True)
     all_rows = {}
