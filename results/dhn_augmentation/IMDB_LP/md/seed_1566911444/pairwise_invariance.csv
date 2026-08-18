@@ -1,0 +1,2 @@
+variant_a,variant_b,candidate_count,query_count,kendall_tau_scores,prediction_agreement,rank_agreement,kendall_tau_positive_ranks,hits_at_1_agreement,hits_at_3_agreement,max_abs_score_diff,mean_abs_score_diff
+v1,v3,16720,836,0.9563356417397092,1.0,0.9413875598086124,0.9946513405718952,0.9964114832535885,0.9988038277511961,0.03152889013290405,0.015627217221488222

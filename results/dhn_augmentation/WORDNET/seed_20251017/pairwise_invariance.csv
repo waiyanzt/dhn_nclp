@@ -1,0 +1,4 @@
+variant_a,variant_b,kendall_tau_scores,prediction_agreement,max_abs_score_diff,mean_abs_score_diff
+no_changes,all_inverse_edges,1.0,1.0,0.0,0.0
+no_changes,universal_edges,0.16426851670300138,0.4823316691066982,0.5606151819229126,0.01255722064524889
+all_inverse_edges,universal_edges,0.16426851670300138,0.4823316691066982,0.5606151819229126,0.01255722064524889

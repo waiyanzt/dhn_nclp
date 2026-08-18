@@ -1,0 +1,182 @@
+{
+  "augmentation_protocol": "selected_variant_shared_model",
+  "best_mean_val_filtered_MRR": 0.006558465992263862,
+  "canonical_archive_variants": [
+    "no_changes",
+    "all_inverse_edges",
+    "transitive_edges",
+    "universal_edges"
+  ],
+  "checkpoint_kind": "best_validation_filtered_MRR",
+  "dataset": "WORDNET",
+  "epoch_accounting": {
+    "batches_per_variant": {
+      "all_inverse_edges": 3,
+      "no_changes": 2,
+      "universal_edges": 14
+    },
+    "definition": "one super-epoch visits every variant and every supervised triple batch in that variant",
+    "expected_optimizer_steps": 247,
+    "optimizer_steps": 247,
+    "super_epochs_ran": 13,
+    "test_graph_forwards": 6,
+    "train_graph_forwards": 247,
+    "updates_per_super_epoch": 19,
+    "validation_checks": 13,
+    "validation_graph_forwards": 39,
+    "variant_epochs_ran": 39
+  },
+  "mean_legacy_test_metrics": {
+    "Hits@1": 0.002871729419272495,
+    "Hits@10": 0.01595405232929164,
+    "Hits@3": 0.006541161455009572,
+    "binary_AP": 0.061956368874027674,
+    "binary_AUC": 0.6525876895939396,
+    "binary_Accuracy": 0.7669832451168087,
+    "binary_F1": 0.08053533768274859,
+    "binary_Precision": 0.050697124890227076,
+    "binary_Recall": 0.38800255264837274,
+    "edge_count": 477660.6666666667,
+    "filtered_MRR": 0.007606493918519491,
+    "training_triples": 384711.3333333333
+  },
+  "mean_shared_candidate_metrics": {
+    "AP": 0.062494830476826156,
+    "AUC": 0.6529107009506728,
+    "Accuracy": 0.7675671842870312,
+    "F1": 0.08013496625443338,
+    "Precision": 0.050318791746340484,
+    "Recall": 0.38800255264837274,
+    "candidate_BCE": 0.6975056330362955
+  },
+  "memory": {
+    "buffer_bytes": 0,
+    "checkpoint_bytes": 11809480,
+    "inference_gpu": {
+      "gpu_allocated_bytes": 100916736,
+      "gpu_peak_allocated_bytes": 308300800,
+      "gpu_peak_reserved_bytes": 364904448,
+      "gpu_reserved_bytes": 364904448
+    },
+    "parameter_bytes": 11798784,
+    "process_peak_rss_bytes": 2047766528,
+    "static_model_bytes": 11798784,
+    "training_gpu": {
+      "gpu_allocated_bytes": 100916736,
+      "gpu_peak_allocated_bytes": 2992929792,
+      "gpu_peak_reserved_bytes": 3070230528,
+      "gpu_reserved_bytes": 3070230528
+    }
+  },
+  "model": "DHNWordNetLP",
+  "pairwise_invariance": [
+    {
+      "kendall_tau_scores": 1.0,
+      "max_abs_score_diff": 0.0,
+      "mean_abs_score_diff": 0.0,
+      "prediction_agreement": 1.0,
+      "variant_a": "no_changes",
+      "variant_b": "all_inverse_edges"
+    },
+    {
+      "kendall_tau_scores": 0.16426851670300138,
+      "max_abs_score_diff": 0.5606151819229126,
+      "mean_abs_score_diff": 0.01255722064524889,
+      "prediction_agreement": 0.4823316691066982,
+      "variant_a": "no_changes",
+      "variant_b": "universal_edges"
+    },
+    {
+      "kendall_tau_scores": 0.16426851670300138,
+      "max_abs_score_diff": 0.5606151819229126,
+      "mean_abs_score_diff": 0.01255722064524889,
+      "prediction_agreement": 0.4823316691066982,
+      "variant_a": "all_inverse_edges",
+      "variant_b": "universal_edges"
+    }
+  ],
+  "per_variant_legacy_test_metrics": {
+    "all_inverse_edges": {
+      "Hits@1": 0.0038289725590299937,
+      "Hits@10": 0.02026164645820038,
+      "Hits@3": 0.008615188257817485,
+      "binary_AP": 0.07010785784217662,
+      "binary_AUC": 0.6401167211500438,
+      "binary_Accuracy": 0.9268741319118585,
+      "binary_F1": 0.09479553903345725,
+      "binary_Precision": 0.06258948660257721,
+      "binary_Recall": 0.19527760051052967,
+      "edge_count": 143664.0,
+      "filtered_MRR": 0.009705922423821284,
+      "training_triples": 173670.0
+    },
+    "no_changes": {
+      "Hits@1": 0.0038289725590299937,
+      "Hits@10": 0.02026164645820038,
+      "Hits@3": 0.008615188257817485,
+      "binary_AP": 0.07010785784217662,
+      "binary_AUC": 0.6401167211500438,
+      "binary_Accuracy": 0.9268741319118585,
+      "binary_F1": 0.09479553903345725,
+      "binary_Precision": 0.06258948660257721,
+      "binary_Recall": 0.19527760051052967,
+      "edge_count": 143664.0,
+      "filtered_MRR": 0.009705922423821284,
+      "training_triples": 86835.0
+    },
+    "universal_edges": {
+      "Hits@1": 0.0009572431397574984,
+      "Hits@10": 0.007338864071474154,
+      "Hits@3": 0.002393107849393746,
+      "binary_AP": 0.045653390937729806,
+      "binary_AUC": 0.6775296264817313,
+      "binary_Accuracy": 0.44720147152670897,
+      "binary_F1": 0.05201493498133127,
+      "binary_Precision": 0.026912401465526814,
+      "binary_Recall": 0.7734524569240587,
+      "edge_count": 1145654.0,
+      "filtered_MRR": 0.003407636907915905,
+      "training_triples": 893629.0
+    }
+  },
+  "per_variant_shared_candidate_metrics": {
+    "all_inverse_edges": {
+      "AP": 0.07046871350219996,
+      "AUC": 0.6402000171859862,
+      "Accuracy": 0.9262422263097965,
+      "F1": 0.09405978636747868,
+      "Precision": 0.06194959003947768,
+      "Recall": 0.19527760051052967,
+      "candidate_BCE": 0.6883431077003479
+    },
+    "no_changes": {
+      "AP": 0.07046871350219996,
+      "AUC": 0.6402000171859862,
+      "Accuracy": 0.9262422263097965,
+      "F1": 0.09405978636747868,
+      "Precision": 0.06194959003947768,
+      "Recall": 0.19527760051052967,
+      "candidate_BCE": 0.6883431077003479
+    },
+    "universal_edges": {
+      "AP": 0.04654706442607855,
+      "AUC": 0.6783320684800461,
+      "Accuracy": 0.4502171002415006,
+      "F1": 0.052285326028342786,
+      "Precision": 0.02705719516006608,
+      "Recall": 0.7734524569240587,
+      "candidate_BCE": 0.7158306837081909
+    }
+  },
+  "seed": 20251017,
+  "selection_metric": "mean_filtered_MRR",
+  "split_protocol": "official_leakage_free_four_variant_wordnet_splits",
+  "splits_npz": "/nfs/hpc/share/tinw/idealab/dhn_nclp/data/preprocessed/WordNet_four_variant_splits.npz",
+  "training_objective": "-mean(logsigmoid(positive))-mean(logsigmoid(-negative))",
+  "training_seconds": 173.28455848712474,
+  "variants": [
+    "no_changes",
+    "all_inverse_edges",
+    "universal_edges"
+  ]
+}

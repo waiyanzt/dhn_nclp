@@ -1,0 +1,550 @@
+{
+  "runs": [
+    {
+      "augmentation_protocol": "selected_variant_shared_model",
+      "best_mean_val_filtered_MRR": 0.006995433084370056,
+      "canonical_archive_variants": [
+        "no_changes",
+        "all_inverse_edges",
+        "transitive_edges",
+        "universal_edges"
+      ],
+      "checkpoint_kind": "best_validation_filtered_MRR",
+      "dataset": "WORDNET",
+      "epoch_accounting": {
+        "batches_per_variant": {
+          "all_inverse_edges": 3,
+          "no_changes": 2,
+          "universal_edges": 14
+        },
+        "definition": "one super-epoch visits every variant and every supervised triple batch in that variant",
+        "expected_optimizer_steps": 323,
+        "optimizer_steps": 323,
+        "super_epochs_ran": 17,
+        "test_graph_forwards": 6,
+        "train_graph_forwards": 323,
+        "updates_per_super_epoch": 19,
+        "validation_checks": 17,
+        "validation_graph_forwards": 51,
+        "variant_epochs_ran": 51
+      },
+      "mean_legacy_test_metrics": {
+        "Hits@1": 0.004839395873218464,
+        "Hits@10": 0.01568815145713678,
+        "Hits@3": 0.006807062327164433,
+        "binary_AP": 0.043572949913137565,
+        "binary_AUC": 0.6301907094676459,
+        "binary_Accuracy": 0.7915462292128083,
+        "binary_F1": 0.08749039746916605,
+        "binary_Precision": 0.05542559083999538,
+        "binary_Recall": 0.37864284194852155,
+        "edge_count": 477660.6666666667,
+        "filtered_MRR": 0.00850086521828926,
+        "training_triples": 384711.3333333333
+      },
+      "mean_shared_candidate_metrics": {
+        "AP": 0.04389903838917414,
+        "AUC": 0.6305035738298971,
+        "Accuracy": 0.7924909593703467,
+        "F1": 0.0876974083003358,
+        "Precision": 0.05557648269264757,
+        "Recall": 0.37864284194852155,
+        "candidate_BCE": 0.6166875958442688
+      },
+      "memory": {
+        "buffer_bytes": 0,
+        "checkpoint_bytes": 11809480,
+        "inference_gpu": {
+          "gpu_allocated_bytes": 106539520,
+          "gpu_peak_allocated_bytes": 313923584,
+          "gpu_peak_reserved_bytes": 343932928,
+          "gpu_reserved_bytes": 343932928
+        },
+        "parameter_bytes": 11798784,
+        "process_peak_rss_bytes": 2034638848,
+        "static_model_bytes": 11798784,
+        "training_gpu": {
+          "gpu_allocated_bytes": 106539520,
+          "gpu_peak_allocated_bytes": 2992929792,
+          "gpu_peak_reserved_bytes": 3072327680,
+          "gpu_reserved_bytes": 3072327680
+        }
+      },
+      "model": "DHNWordNetLP",
+      "pairwise_invariance": [
+        {
+          "kendall_tau_scores": 0.9999999999999999,
+          "max_abs_score_diff": 0.0,
+          "mean_abs_score_diff": 0.0,
+          "prediction_agreement": 1.0,
+          "variant_a": "no_changes",
+          "variant_b": "all_inverse_edges"
+        },
+        {
+          "kendall_tau_scores": 0.16563317806788921,
+          "max_abs_score_diff": 0.8740176558494568,
+          "mean_abs_score_diff": 0.09634886682033539,
+          "prediction_agreement": 0.5492761239786278,
+          "variant_a": "no_changes",
+          "variant_b": "universal_edges"
+        },
+        {
+          "kendall_tau_scores": 0.16563317806788921,
+          "max_abs_score_diff": 0.8740176558494568,
+          "mean_abs_score_diff": 0.09634886682033539,
+          "prediction_agreement": 0.5492761239786278,
+          "variant_a": "all_inverse_edges",
+          "variant_b": "universal_edges"
+        }
+      ],
+      "per_variant_legacy_test_metrics": {
+        "all_inverse_edges": {
+          "Hits@1": 0.006541161455009573,
+          "Hits@10": 0.019783024888321635,
+          "Hits@3": 0.008615188257817485,
+          "binary_AP": 0.040721600305533484,
+          "binary_AUC": 0.5980370121796514,
+          "binary_Accuracy": 0.9286947708247306,
+          "binary_F1": 0.10379806558150508,
+          "binary_Precision": 0.06887196076385266,
+          "binary_Recall": 0.21059349074664965,
+          "edge_count": 143664.0,
+          "filtered_MRR": 0.010793949878869792,
+          "training_triples": 173670.0
+        },
+        "no_changes": {
+          "Hits@1": 0.006541161455009573,
+          "Hits@10": 0.019783024888321635,
+          "Hits@3": 0.008615188257817485,
+          "binary_AP": 0.040721600305533484,
+          "binary_AUC": 0.5980370121796514,
+          "binary_Accuracy": 0.9286947708247306,
+          "binary_F1": 0.10379806558150508,
+          "binary_Precision": 0.06887196076385266,
+          "binary_Recall": 0.21059349074664965,
+          "edge_count": 143664.0,
+          "filtered_MRR": 0.010793949878869792,
+          "training_triples": 86835.0
+        },
+        "universal_edges": {
+          "Hits@1": 0.0014358647096362476,
+          "Hits@10": 0.007498404594767071,
+          "Hits@3": 0.003190810465858328,
+          "binary_AP": 0.04927564912834573,
+          "binary_AUC": 0.6944981040436347,
+          "binary_Accuracy": 0.5172491459889635,
+          "binary_F1": 0.054875061244487995,
+          "binary_Precision": 0.028532850992280846,
+          "binary_Recall": 0.7147415443522654,
+          "edge_count": 1145654.0,
+          "filtered_MRR": 0.0039146958971281965,
+          "training_triples": 893629.0
+        }
+      },
+      "per_variant_shared_candidate_metrics": {
+        "all_inverse_edges": {
+          "AP": 0.04064234154356601,
+          "AUC": 0.5979737976834757,
+          "Accuracy": 0.9288261571380307,
+          "F1": 0.10396975425330812,
+          "Precision": 0.06902321690023008,
+          "Recall": 0.21059349074664965,
+          "candidate_BCE": 0.5935119390487671
+        },
+        "no_changes": {
+          "AP": 0.04064234154356601,
+          "AUC": 0.5979737976834757,
+          "Accuracy": 0.9288261571380307,
+          "F1": 0.10396975425330812,
+          "Precision": 0.06902321690023008,
+          "Recall": 0.21059349074664965,
+          "candidate_BCE": 0.5935119390487671
+        },
+        "universal_edges": {
+          "AP": 0.05041243208039041,
+          "AUC": 0.6955631261227397,
+          "Accuracy": 0.5198205638349788,
+          "F1": 0.05515271639439116,
+          "Precision": 0.028683014277482554,
+          "Recall": 0.7147415443522654,
+          "candidate_BCE": 0.6630389094352722
+        }
+      },
+      "seed": 1566911444,
+      "selection_metric": "mean_filtered_MRR",
+      "split_protocol": "official_leakage_free_four_variant_wordnet_splits",
+      "splits_npz": "/nfs/hpc/share/tinw/idealab/dhn_nclp/data/preprocessed/WordNet_four_variant_splits.npz",
+      "training_objective": "-mean(logsigmoid(positive))-mean(logsigmoid(-negative))",
+      "training_seconds": 232.95965650491416,
+      "variants": [
+        "no_changes",
+        "all_inverse_edges",
+        "universal_edges"
+      ]
+    },
+    {
+      "augmentation_protocol": "selected_variant_shared_model",
+      "best_mean_val_filtered_MRR": 0.007218563720494224,
+      "canonical_archive_variants": [
+        "no_changes",
+        "all_inverse_edges",
+        "transitive_edges",
+        "universal_edges"
+      ],
+      "checkpoint_kind": "best_validation_filtered_MRR",
+      "dataset": "WORDNET",
+      "epoch_accounting": {
+        "batches_per_variant": {
+          "all_inverse_edges": 3,
+          "no_changes": 2,
+          "universal_edges": 14
+        },
+        "definition": "one super-epoch visits every variant and every supervised triple batch in that variant",
+        "expected_optimizer_steps": 228,
+        "optimizer_steps": 228,
+        "super_epochs_ran": 12,
+        "test_graph_forwards": 6,
+        "train_graph_forwards": 228,
+        "updates_per_super_epoch": 19,
+        "validation_checks": 12,
+        "validation_graph_forwards": 36,
+        "variant_epochs_ran": 36
+      },
+      "mean_legacy_test_metrics": {
+        "Hits@1": 0.003190810465858328,
+        "Hits@10": 0.018134439480961495,
+        "Hits@3": 0.007923845990214848,
+        "binary_AP": 0.046453310850896844,
+        "binary_AUC": 0.672117756042347,
+        "binary_Accuracy": 0.11024980083503301,
+        "binary_F1": 0.04135312082660431,
+        "binary_Precision": 0.021125962644831825,
+        "binary_Recall": 0.9756434801106147,
+        "edge_count": 477660.6666666667,
+        "filtered_MRR": 0.008353403027512396,
+        "training_triples": 384711.3333333333
+      },
+      "mean_shared_candidate_metrics": {
+        "AP": 0.04671725841471841,
+        "AUC": 0.6722698957994382,
+        "Accuracy": 0.10939474705006445,
+        "F1": 0.04131249148372326,
+        "Precision": 0.021104725325856003,
+        "Recall": 0.9756434801106147,
+        "candidate_BCE": 0.7100857893625895
+      },
+      "memory": {
+        "buffer_bytes": 0,
+        "checkpoint_bytes": 11809480,
+        "inference_gpu": {
+          "gpu_allocated_bytes": 100916736,
+          "gpu_peak_allocated_bytes": 308300800,
+          "gpu_peak_reserved_bytes": 364904448,
+          "gpu_reserved_bytes": 364904448
+        },
+        "parameter_bytes": 11798784,
+        "process_peak_rss_bytes": 2047717376,
+        "static_model_bytes": 11798784,
+        "training_gpu": {
+          "gpu_allocated_bytes": 100916736,
+          "gpu_peak_allocated_bytes": 2992929792,
+          "gpu_peak_reserved_bytes": 3070230528,
+          "gpu_reserved_bytes": 3070230528
+        }
+      },
+      "model": "DHNWordNetLP",
+      "pairwise_invariance": [
+        {
+          "kendall_tau_scores": 1.0,
+          "max_abs_score_diff": 0.0,
+          "mean_abs_score_diff": 0.0,
+          "prediction_agreement": 1.0,
+          "variant_a": "no_changes",
+          "variant_b": "all_inverse_edges"
+        },
+        {
+          "kendall_tau_scores": 0.49204639667160666,
+          "max_abs_score_diff": 0.5522584319114685,
+          "mean_abs_score_diff": 0.015927990898489952,
+          "prediction_agreement": 0.8721861431234906,
+          "variant_a": "no_changes",
+          "variant_b": "universal_edges"
+        },
+        {
+          "kendall_tau_scores": 0.49204639667160666,
+          "max_abs_score_diff": 0.5522584319114685,
+          "mean_abs_score_diff": 0.015927990898489952,
+          "prediction_agreement": 0.8721861431234906,
+          "variant_a": "all_inverse_edges",
+          "variant_b": "universal_edges"
+        }
+      ],
+      "per_variant_legacy_test_metrics": {
+        "all_inverse_edges": {
+          "Hits@1": 0.0038289725590299937,
+          "Hits@10": 0.021059349074664963,
+          "Hits@3": 0.009891512444160817,
+          "binary_AP": 0.048209792466123315,
+          "binary_AUC": 0.6792702492253071,
+          "binary_Accuracy": 0.15129446801056096,
+          "binary_F1": 0.04274927669183544,
+          "binary_Precision": 0.02185804179655929,
+          "binary_Recall": 0.9664964901084876,
+          "edge_count": 143664.0,
+          "filtered_MRR": 0.010118608880983428,
+          "training_triples": 173670.0
+        },
+        "no_changes": {
+          "Hits@1": 0.0038289725590299937,
+          "Hits@10": 0.021059349074664963,
+          "Hits@3": 0.009891512444160817,
+          "binary_AP": 0.048209792466123315,
+          "binary_AUC": 0.6792702492253071,
+          "binary_Accuracy": 0.15129446801056096,
+          "binary_F1": 0.04274927669183544,
+          "binary_Precision": 0.02185804179655929,
+          "binary_Recall": 0.9664964901084876,
+          "edge_count": 143664.0,
+          "filtered_MRR": 0.010118608880983428,
+          "training_triples": 86835.0
+        },
+        "universal_edges": {
+          "Hits@1": 0.0019144862795149968,
+          "Hits@10": 0.012284620293554562,
+          "Hits@3": 0.00398851308232291,
+          "binary_AP": 0.04294034762044391,
+          "binary_AUC": 0.657812769676427,
+          "binary_Accuracy": 0.028160466483977128,
+          "binary_F1": 0.03856080909614206,
+          "binary_Precision": 0.019661804341376894,
+          "binary_Recall": 0.9939374601148692,
+          "edge_count": 1145654.0,
+          "filtered_MRR": 0.004822991320570329,
+          "training_triples": 893629.0
+        }
+      },
+      "per_variant_shared_candidate_metrics": {
+        "all_inverse_edges": {
+          "AP": 0.04832280857132927,
+          "AUC": 0.6792363964978055,
+          "Accuracy": 0.15009322171753195,
+          "F1": 0.042691434933968514,
+          "Precision": 0.02182779891617664,
+          "Recall": 0.9664964901084876,
+          "candidate_BCE": 0.6960479021072388
+        },
+        "no_changes": {
+          "AP": 0.04832280857132927,
+          "AUC": 0.6792363964978055,
+          "Accuracy": 0.15009322171753195,
+          "F1": 0.042691434933968514,
+          "Precision": 0.02182779891617664,
+          "Recall": 0.9664964901084876,
+          "candidate_BCE": 0.6960479021072388
+        },
+        "universal_edges": {
+          "AP": 0.043506158101496675,
+          "AUC": 0.6583368944027035,
+          "Accuracy": 0.027997797715129447,
+          "F1": 0.03855460458323277,
+          "Precision": 0.01965857814521473,
+          "Recall": 0.9939374601148692,
+          "candidate_BCE": 0.738161563873291
+        }
+      },
+      "seed": 20241017,
+      "selection_metric": "mean_filtered_MRR",
+      "split_protocol": "official_leakage_free_four_variant_wordnet_splits",
+      "splits_npz": "/nfs/hpc/share/tinw/idealab/dhn_nclp/data/preprocessed/WordNet_four_variant_splits.npz",
+      "training_objective": "-mean(logsigmoid(positive))-mean(logsigmoid(-negative))",
+      "training_seconds": 160.89541495102458,
+      "variants": [
+        "no_changes",
+        "all_inverse_edges",
+        "universal_edges"
+      ]
+    },
+    {
+      "augmentation_protocol": "selected_variant_shared_model",
+      "best_mean_val_filtered_MRR": 0.006558465992263862,
+      "canonical_archive_variants": [
+        "no_changes",
+        "all_inverse_edges",
+        "transitive_edges",
+        "universal_edges"
+      ],
+      "checkpoint_kind": "best_validation_filtered_MRR",
+      "dataset": "WORDNET",
+      "epoch_accounting": {
+        "batches_per_variant": {
+          "all_inverse_edges": 3,
+          "no_changes": 2,
+          "universal_edges": 14
+        },
+        "definition": "one super-epoch visits every variant and every supervised triple batch in that variant",
+        "expected_optimizer_steps": 247,
+        "optimizer_steps": 247,
+        "super_epochs_ran": 13,
+        "test_graph_forwards": 6,
+        "train_graph_forwards": 247,
+        "updates_per_super_epoch": 19,
+        "validation_checks": 13,
+        "validation_graph_forwards": 39,
+        "variant_epochs_ran": 39
+      },
+      "mean_legacy_test_metrics": {
+        "Hits@1": 0.002871729419272495,
+        "Hits@10": 0.01595405232929164,
+        "Hits@3": 0.006541161455009572,
+        "binary_AP": 0.061956368874027674,
+        "binary_AUC": 0.6525876895939396,
+        "binary_Accuracy": 0.7669832451168087,
+        "binary_F1": 0.08053533768274859,
+        "binary_Precision": 0.050697124890227076,
+        "binary_Recall": 0.38800255264837274,
+        "edge_count": 477660.6666666667,
+        "filtered_MRR": 0.007606493918519491,
+        "training_triples": 384711.3333333333
+      },
+      "mean_shared_candidate_metrics": {
+        "AP": 0.062494830476826156,
+        "AUC": 0.6529107009506728,
+        "Accuracy": 0.7675671842870312,
+        "F1": 0.08013496625443338,
+        "Precision": 0.050318791746340484,
+        "Recall": 0.38800255264837274,
+        "candidate_BCE": 0.6975056330362955
+      },
+      "memory": {
+        "buffer_bytes": 0,
+        "checkpoint_bytes": 11809480,
+        "inference_gpu": {
+          "gpu_allocated_bytes": 100916736,
+          "gpu_peak_allocated_bytes": 308300800,
+          "gpu_peak_reserved_bytes": 364904448,
+          "gpu_reserved_bytes": 364904448
+        },
+        "parameter_bytes": 11798784,
+        "process_peak_rss_bytes": 2047766528,
+        "static_model_bytes": 11798784,
+        "training_gpu": {
+          "gpu_allocated_bytes": 100916736,
+          "gpu_peak_allocated_bytes": 2992929792,
+          "gpu_peak_reserved_bytes": 3070230528,
+          "gpu_reserved_bytes": 3070230528
+        }
+      },
+      "model": "DHNWordNetLP",
+      "pairwise_invariance": [
+        {
+          "kendall_tau_scores": 1.0,
+          "max_abs_score_diff": 0.0,
+          "mean_abs_score_diff": 0.0,
+          "prediction_agreement": 1.0,
+          "variant_a": "no_changes",
+          "variant_b": "all_inverse_edges"
+        },
+        {
+          "kendall_tau_scores": 0.16426851670300138,
+          "max_abs_score_diff": 0.5606151819229126,
+          "mean_abs_score_diff": 0.01255722064524889,
+          "prediction_agreement": 0.4823316691066982,
+          "variant_a": "no_changes",
+          "variant_b": "universal_edges"
+        },
+        {
+          "kendall_tau_scores": 0.16426851670300138,
+          "max_abs_score_diff": 0.5606151819229126,
+          "mean_abs_score_diff": 0.01255722064524889,
+          "prediction_agreement": 0.4823316691066982,
+          "variant_a": "all_inverse_edges",
+          "variant_b": "universal_edges"
+        }
+      ],
+      "per_variant_legacy_test_metrics": {
+        "all_inverse_edges": {
+          "Hits@1": 0.0038289725590299937,
+          "Hits@10": 0.02026164645820038,
+          "Hits@3": 0.008615188257817485,
+          "binary_AP": 0.07010785784217662,
+          "binary_AUC": 0.6401167211500438,
+          "binary_Accuracy": 0.9268741319118585,
+          "binary_F1": 0.09479553903345725,
+          "binary_Precision": 0.06258948660257721,
+          "binary_Recall": 0.19527760051052967,
+          "edge_count": 143664.0,
+          "filtered_MRR": 0.009705922423821284,
+          "training_triples": 173670.0
+        },
+        "no_changes": {
+          "Hits@1": 0.0038289725590299937,
+          "Hits@10": 0.02026164645820038,
+          "Hits@3": 0.008615188257817485,
+          "binary_AP": 0.07010785784217662,
+          "binary_AUC": 0.6401167211500438,
+          "binary_Accuracy": 0.9268741319118585,
+          "binary_F1": 0.09479553903345725,
+          "binary_Precision": 0.06258948660257721,
+          "binary_Recall": 0.19527760051052967,
+          "edge_count": 143664.0,
+          "filtered_MRR": 0.009705922423821284,
+          "training_triples": 86835.0
+        },
+        "universal_edges": {
+          "Hits@1": 0.0009572431397574984,
+          "Hits@10": 0.007338864071474154,
+          "Hits@3": 0.002393107849393746,
+          "binary_AP": 0.045653390937729806,
+          "binary_AUC": 0.6775296264817313,
+          "binary_Accuracy": 0.44720147152670897,
+          "binary_F1": 0.05201493498133127,
+          "binary_Precision": 0.026912401465526814,
+          "binary_Recall": 0.7734524569240587,
+          "edge_count": 1145654.0,
+          "filtered_MRR": 0.003407636907915905,
+          "training_triples": 893629.0
+        }
+      },
+      "per_variant_shared_candidate_metrics": {
+        "all_inverse_edges": {
+          "AP": 0.07046871350219996,
+          "AUC": 0.6402000171859862,
+          "Accuracy": 0.9262422263097965,
+          "F1": 0.09405978636747868,
+          "Precision": 0.06194959003947768,
+          "Recall": 0.19527760051052967,
+          "candidate_BCE": 0.6883431077003479
+        },
+        "no_changes": {
+          "AP": 0.07046871350219996,
+          "AUC": 0.6402000171859862,
+          "Accuracy": 0.9262422263097965,
+          "F1": 0.09405978636747868,
+          "Precision": 0.06194959003947768,
+          "Recall": 0.19527760051052967,
+          "candidate_BCE": 0.6883431077003479
+        },
+        "universal_edges": {
+          "AP": 0.04654706442607855,
+          "AUC": 0.6783320684800461,
+          "Accuracy": 0.4502171002415006,
+          "F1": 0.052285326028342786,
+          "Precision": 0.02705719516006608,
+          "Recall": 0.7734524569240587,
+          "candidate_BCE": 0.7158306837081909
+        }
+      },
+      "seed": 20251017,
+      "selection_metric": "mean_filtered_MRR",
+      "split_protocol": "official_leakage_free_four_variant_wordnet_splits",
+      "splits_npz": "/nfs/hpc/share/tinw/idealab/dhn_nclp/data/preprocessed/WordNet_four_variant_splits.npz",
+      "training_objective": "-mean(logsigmoid(positive))-mean(logsigmoid(-negative))",
+      "training_seconds": 173.28455848712474,
+      "variants": [
+        "no_changes",
+        "all_inverse_edges",
+        "universal_edges"
+      ]
+    }
+  ]
+}

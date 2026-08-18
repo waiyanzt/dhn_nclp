@@ -1,0 +1,182 @@
+{
+  "augmentation_protocol": "selected_variant_shared_model",
+  "best_mean_val_filtered_MRR": 0.007218563720494224,
+  "canonical_archive_variants": [
+    "no_changes",
+    "all_inverse_edges",
+    "transitive_edges",
+    "universal_edges"
+  ],
+  "checkpoint_kind": "best_validation_filtered_MRR",
+  "dataset": "WORDNET",
+  "epoch_accounting": {
+    "batches_per_variant": {
+      "all_inverse_edges": 3,
+      "no_changes": 2,
+      "universal_edges": 14
+    },
+    "definition": "one super-epoch visits every variant and every supervised triple batch in that variant",
+    "expected_optimizer_steps": 228,
+    "optimizer_steps": 228,
+    "super_epochs_ran": 12,
+    "test_graph_forwards": 6,
+    "train_graph_forwards": 228,
+    "updates_per_super_epoch": 19,
+    "validation_checks": 12,
+    "validation_graph_forwards": 36,
+    "variant_epochs_ran": 36
+  },
+  "mean_legacy_test_metrics": {
+    "Hits@1": 0.003190810465858328,
+    "Hits@10": 0.018134439480961495,
+    "Hits@3": 0.007923845990214848,
+    "binary_AP": 0.046453310850896844,
+    "binary_AUC": 0.672117756042347,
+    "binary_Accuracy": 0.11024980083503301,
+    "binary_F1": 0.04135312082660431,
+    "binary_Precision": 0.021125962644831825,
+    "binary_Recall": 0.9756434801106147,
+    "edge_count": 477660.6666666667,
+    "filtered_MRR": 0.008353403027512396,
+    "training_triples": 384711.3333333333
+  },
+  "mean_shared_candidate_metrics": {
+    "AP": 0.04671725841471841,
+    "AUC": 0.6722698957994382,
+    "Accuracy": 0.10939474705006445,
+    "F1": 0.04131249148372326,
+    "Precision": 0.021104725325856003,
+    "Recall": 0.9756434801106147,
+    "candidate_BCE": 0.7100857893625895
+  },
+  "memory": {
+    "buffer_bytes": 0,
+    "checkpoint_bytes": 11809480,
+    "inference_gpu": {
+      "gpu_allocated_bytes": 100916736,
+      "gpu_peak_allocated_bytes": 308300800,
+      "gpu_peak_reserved_bytes": 364904448,
+      "gpu_reserved_bytes": 364904448
+    },
+    "parameter_bytes": 11798784,
+    "process_peak_rss_bytes": 2047717376,
+    "static_model_bytes": 11798784,
+    "training_gpu": {
+      "gpu_allocated_bytes": 100916736,
+      "gpu_peak_allocated_bytes": 2992929792,
+      "gpu_peak_reserved_bytes": 3070230528,
+      "gpu_reserved_bytes": 3070230528
+    }
+  },
+  "model": "DHNWordNetLP",
+  "pairwise_invariance": [
+    {
+      "kendall_tau_scores": 1.0,
+      "max_abs_score_diff": 0.0,
+      "mean_abs_score_diff": 0.0,
+      "prediction_agreement": 1.0,
+      "variant_a": "no_changes",
+      "variant_b": "all_inverse_edges"
+    },
+    {
+      "kendall_tau_scores": 0.49204639667160666,
+      "max_abs_score_diff": 0.5522584319114685,
+      "mean_abs_score_diff": 0.015927990898489952,
+      "prediction_agreement": 0.8721861431234906,
+      "variant_a": "no_changes",
+      "variant_b": "universal_edges"
+    },
+    {
+      "kendall_tau_scores": 0.49204639667160666,
+      "max_abs_score_diff": 0.5522584319114685,
+      "mean_abs_score_diff": 0.015927990898489952,
+      "prediction_agreement": 0.8721861431234906,
+      "variant_a": "all_inverse_edges",
+      "variant_b": "universal_edges"
+    }
+  ],
+  "per_variant_legacy_test_metrics": {
+    "all_inverse_edges": {
+      "Hits@1": 0.0038289725590299937,
+      "Hits@10": 0.021059349074664963,
+      "Hits@3": 0.009891512444160817,
+      "binary_AP": 0.048209792466123315,
+      "binary_AUC": 0.6792702492253071,
+      "binary_Accuracy": 0.15129446801056096,
+      "binary_F1": 0.04274927669183544,
+      "binary_Precision": 0.02185804179655929,
+      "binary_Recall": 0.9664964901084876,
+      "edge_count": 143664.0,
+      "filtered_MRR": 0.010118608880983428,
+      "training_triples": 173670.0
+    },
+    "no_changes": {
+      "Hits@1": 0.0038289725590299937,
+      "Hits@10": 0.021059349074664963,
+      "Hits@3": 0.009891512444160817,
+      "binary_AP": 0.048209792466123315,
+      "binary_AUC": 0.6792702492253071,
+      "binary_Accuracy": 0.15129446801056096,
+      "binary_F1": 0.04274927669183544,
+      "binary_Precision": 0.02185804179655929,
+      "binary_Recall": 0.9664964901084876,
+      "edge_count": 143664.0,
+      "filtered_MRR": 0.010118608880983428,
+      "training_triples": 86835.0
+    },
+    "universal_edges": {
+      "Hits@1": 0.0019144862795149968,
+      "Hits@10": 0.012284620293554562,
+      "Hits@3": 0.00398851308232291,
+      "binary_AP": 0.04294034762044391,
+      "binary_AUC": 0.657812769676427,
+      "binary_Accuracy": 0.028160466483977128,
+      "binary_F1": 0.03856080909614206,
+      "binary_Precision": 0.019661804341376894,
+      "binary_Recall": 0.9939374601148692,
+      "edge_count": 1145654.0,
+      "filtered_MRR": 0.004822991320570329,
+      "training_triples": 893629.0
+    }
+  },
+  "per_variant_shared_candidate_metrics": {
+    "all_inverse_edges": {
+      "AP": 0.04832280857132927,
+      "AUC": 0.6792363964978055,
+      "Accuracy": 0.15009322171753195,
+      "F1": 0.042691434933968514,
+      "Precision": 0.02182779891617664,
+      "Recall": 0.9664964901084876,
+      "candidate_BCE": 0.6960479021072388
+    },
+    "no_changes": {
+      "AP": 0.04832280857132927,
+      "AUC": 0.6792363964978055,
+      "Accuracy": 0.15009322171753195,
+      "F1": 0.042691434933968514,
+      "Precision": 0.02182779891617664,
+      "Recall": 0.9664964901084876,
+      "candidate_BCE": 0.6960479021072388
+    },
+    "universal_edges": {
+      "AP": 0.043506158101496675,
+      "AUC": 0.6583368944027035,
+      "Accuracy": 0.027997797715129447,
+      "F1": 0.03855460458323277,
+      "Precision": 0.01965857814521473,
+      "Recall": 0.9939374601148692,
+      "candidate_BCE": 0.738161563873291
+    }
+  },
+  "seed": 20241017,
+  "selection_metric": "mean_filtered_MRR",
+  "split_protocol": "official_leakage_free_four_variant_wordnet_splits",
+  "splits_npz": "/nfs/hpc/share/tinw/idealab/dhn_nclp/data/preprocessed/WordNet_four_variant_splits.npz",
+  "training_objective": "-mean(logsigmoid(positive))-mean(logsigmoid(-negative))",
+  "training_seconds": 160.89541495102458,
+  "variants": [
+    "no_changes",
+    "all_inverse_edges",
+    "universal_edges"
+  ]
+}
