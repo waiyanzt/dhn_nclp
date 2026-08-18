@@ -37,7 +37,7 @@ runs/default
 
 # Notebook checkpoints
 .ipynb_checkpoints/
-data/preprocessed/*.pt
+/data/preprocessed/
 
 # Raw datasets are local-only and may be very large.
 /data/raw/
