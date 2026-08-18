@@ -1,13 +1,27 @@
-import os
 import argparse
+import os
+import time
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from sklearn.model_selection import StratifiedKFold
 
+from dhn.augmentation_utils import (
+    RESOURCE_METRIC_KEYS,
+    atomic_torch_save,
+    atomic_write_csv,
+    cuda_memory_stats,
+    flat_resource_metrics,
+    process_peak_rss_bytes,
+    reset_cuda_peak,
+    resolve_device,
+    set_determinism,
+)
 from dhn.models import DHN
 from dhn.datasets import HomDataLoader, HomDataset
 from dhn.utils import (
@@ -28,6 +42,20 @@ def parse_args():
         default="configs/default.yaml",
         help="Path to training config file",
     )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Result/checkpoint directory. Default: "
+            "results/original_graph_classification/<dataset>."
+        ),
+    )
+    parser.add_argument(
+        "--device",
+        default="",
+        help="Override config device, e.g. cuda:0 or cpu.",
+    )
     return parser.parse_args()
 
 
@@ -37,9 +65,12 @@ def load_config(config_path):
 
 
 def set_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
+    set_determinism(seed)
+
+
+def synchronize_if_cuda(device):
+    if torch.device(device).type == "cuda":
+        torch.cuda.synchronize(torch.device(device))
 
 
 def train_one_epoch(
@@ -111,7 +142,15 @@ def main():
     config = load_config(args.config)
     set_seed(config["seed"])
 
-    device = config["device"]
+    runtime_device = resolve_device(args.device or config["device"])
+    device = str(runtime_device)
+    dataset_name = config["data"]["dataset"]
+    output_dir = args.out_dir or (
+        Path("results")
+        / "original_graph_classification"
+        / dataset_name.lower()
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
     logdir = os.path.join(config["logging"]["path"], config["logging"]["experiment"])
     logger = SummaryWriter(log_dir=logdir)
     log_step = 0
@@ -123,7 +162,9 @@ def main():
 
     indices = build_splits(config, dataset)
 
+    fold_rows = []
     for fold, (tr_indices, val_indices) in enumerate(indices):
+        fold_start = time.perf_counter()
         train_loader = HomDataLoader(
             [dataset[int(i)] for i in tr_indices],
             batch_size=config["training"]["batch_size"],
@@ -159,6 +200,9 @@ def main():
                 optimizer, **config["training"]["lr_scheduling"]["kwargs"]
             )
 
+        reset_cuda_peak(runtime_device)
+        synchronize_if_cuda(runtime_device)
+        train_start = time.perf_counter()
         for _ in tqdm(range(1, config["training"]["epochs"] + 1), desc=f"fold {fold}"):
             log_step = train_one_epoch(
                 model=model,
@@ -179,8 +223,98 @@ def main():
                 fold=fold,
                 device=device,
             )
+        synchronize_if_cuda(runtime_device)
+        train_time_s = time.perf_counter() - train_start
+        training_gpu = cuda_memory_stats(runtime_device)
+
+        checkpoint_path = output_dir / (
+            f"{dataset_name}_seed{config['seed']}_fold{fold}.pt"
+        )
+        atomic_torch_save(
+            {
+                "model": {
+                    name: value.detach().cpu()
+                    for name, value in model.state_dict().items()
+                },
+                "dataset": dataset_name,
+                "seed": int(config["seed"]),
+                "fold": int(fold),
+                "config": config,
+            },
+            checkpoint_path,
+        )
+
+        reset_cuda_peak(runtime_device)
+        synchronize_if_cuda(runtime_device)
+        eval_start = time.perf_counter()
+        final_accuracy = evaluate(
+            model,
+            dataloader=val_loader,
+            logger=logger,
+            log_step=log_step,
+            fold=fold,
+            device=device,
+        )
+        synchronize_if_cuda(runtime_device)
+        eval_time_s = time.perf_counter() - eval_start
+        inference_gpu = cuda_memory_stats(runtime_device)
+        resources = flat_resource_metrics(
+            model,
+            training_gpu=training_gpu,
+            inference_gpu=inference_gpu,
+            checkpoint_path=checkpoint_path,
+            peak_rss_bytes=process_peak_rss_bytes(),
+        )
+        fold_rows.append(
+            {
+                "dataset": dataset_name,
+                "seed": int(config["seed"]),
+                "fold": int(fold),
+                "accuracy": float(final_accuracy),
+                "train_time_s": float(train_time_s),
+                "eval_time_s": float(eval_time_s),
+                "elapsed_time_s": float(time.perf_counter() - fold_start),
+                **resources,
+            }
+        )
+        print(
+            f"fold={fold} accuracy={final_accuracy:.4f} "
+            f"train_peak_allocated="
+            f"{resources['training_gpu_peak_allocated_bytes']} bytes "
+            f"inference_peak_allocated="
+            f"{resources['inference_gpu_peak_allocated_bytes']} bytes "
+            f"process_peak_rss={resources['process_peak_rss_bytes']} bytes"
+        )
 
     logger.close()
+    raw_frame = pd.DataFrame(fold_rows)
+    raw_path = output_dir / "graph_classification_raw.csv"
+    atomic_write_csv(raw_frame, raw_path)
+
+    numeric_fields = [
+        "accuracy",
+        "train_time_s",
+        "eval_time_s",
+        "elapsed_time_s",
+        *RESOURCE_METRIC_KEYS,
+    ]
+    summary_rows = []
+    for metric in numeric_fields:
+        values = raw_frame[metric].to_numpy(dtype=np.float64)
+        summary_rows.append(
+            {
+                "dataset": dataset_name,
+                "seed": int(config["seed"]),
+                "metric": metric,
+                "mean": float(values.mean()),
+                "std": float(values.std(ddof=0)),
+                "n_folds": int(len(values)),
+            }
+        )
+    summary_path = output_dir / "graph_classification_summary.csv"
+    atomic_write_csv(pd.DataFrame(summary_rows), summary_path)
+    print(f"Wrote {raw_path}")
+    print(f"Wrote {summary_path}")
 
 
 if __name__ == "__main__":

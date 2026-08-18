@@ -39,7 +39,7 @@ The key components are:
 - `scripts/analysis/` — score-comparison analysis such as Kendall tau.
 - `KC_scripts/` — teammate baseline scripts, left in their original layout.
 - `configs/` and `data/` — experiment configs and raw/preprocessed artifacts.
-- `results/` — benchmark outputs grouped first by GPU, then dataset and task.
+- `results/` — benchmark outputs grouped by dataset, task, and experiment arm.
 
 Use module paths from the repo root, for example:
 
@@ -124,6 +124,35 @@ training/inference CUDA allocated, reserved, peak-allocated, and peak-reserved
 bytes. These are PyTorch allocator measurements, not whole-device utilization
 percentages. Rerun cached node-classification seeds to populate these fields;
 artifacts created by older code cannot recover historical peak memory.
+
+### Resource-telemetry coverage
+
+All training entrypoints now use one resource schema:
+
+| Workflow | Entrypoint | Telemetry |
+|---|---|---|
+| IMDb / Freebase node classification | `benchmark_imdb`, `benchmark_freebase` via `node_classification.train` | training + inference CUDA peaks, peak process RSS |
+| IMDb / DBLP / WordNet link prediction | `link_prediction.imdb`, `dblp`, `wordnet` | training + inference CUDA peaks, peak process RSS |
+| IMDb NC/LP and WordNet LP augmentation | the corresponding `*_augmentation` runner | training + inference CUDA peaks, peak process RSS |
+| NC and WordNet output fusion | the corresponding output-fusion workflow | constituent training peaks and sequential-inference peaks |
+| Original ENZYMES/PROTEINS graph classification | `original_graph_classification.train` | per-fold training + inference CUDA peaks, peak process RSS |
+
+The CUDA fields are PyTorch allocator bytes for the process, while
+`process_peak_rss_bytes` is peak CPU resident memory. They do not measure GPU
+utilization percentage, total node-wide GPU usage by other processes, or CPU
+utilization percentage. Preprocessing-only commands do not train a model and
+are outside this runtime-telemetry contract.
+
+The original graph-classification path writes per-fold checkpoints plus
+`graph_classification_raw.csv` and `graph_classification_summary.csv`. For
+example:
+
+```bash
+python -m experiments.original_graph_classification.train \
+  --config configs/default.yaml \
+  --device cuda:0 \
+  --out-dir results/original_graph_classification/enzymes
+```
 
 ```bash
 for task in md mg ml; do
